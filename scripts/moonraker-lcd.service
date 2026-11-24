@@ -1,0 +1,20 @@
+[Unit]
+Description=Moonraker LCD Status (__NAME__)
+After=network-online.target moonraker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+SupplementaryGroups=dialout
+WorkingDirectory=__DIR__
+ExecStart=__PYTHON__ -m moonraker_lcd --config __CONFIG__ run
+Restart=always
+RestartSec=5
+# Beim Stoppen schaltet der Dienst das Display dunkel
+TimeoutStopSec=10
+Nice=5
+SyslogIdentifier=__NAME__
+
+[Install]
+WantedBy=multi-user.target
