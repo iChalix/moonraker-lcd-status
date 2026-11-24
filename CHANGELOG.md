@@ -13,6 +13,8 @@ Release einen datierten Abschnitt.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-24
+
 Erste Version.
 
 ### Hinzugefügt
@@ -30,3 +32,4 @@ Erste Version.
 - `install.sh` (auch mehrere Instanzen), systemd-Dienst, Block für den
   Moonraker-Update-Manager.
 - Tests: Unit-Tests, der echte Sketch gegen ein LCD-Modell, Ende-zu-Ende-Test.
+
