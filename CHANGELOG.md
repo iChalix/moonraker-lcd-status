@@ -13,6 +13,8 @@ Release einen datierten Abschnitt.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-27
+
 ### Neu
 
 * Untermenü **Filament**: Laden und Entladen mit im Menü wählbarer Temperatur.
