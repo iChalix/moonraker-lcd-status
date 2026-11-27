@@ -13,6 +13,8 @@ Release einen datierten Abschnitt.
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-27
+
 ### Behoben
 
 * Drehgeber mit 2 Flanken pro Rastung (z. B. manche HW-040) brauchten zwei
