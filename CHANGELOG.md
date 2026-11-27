@@ -13,6 +13,8 @@ Release einen datierten Abschnitt.
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-27
+
 ### Neu
 
 * Untermenü **Z-Offset**: Babystepping auch während des Drucks (Schritt 0,005
