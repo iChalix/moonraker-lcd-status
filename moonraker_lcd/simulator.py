@@ -30,6 +30,7 @@ def base_objects() -> dict:
                      "axis_minimum": [0.0, 0.0, -2.0, 0.0], "axis_maximum": [300.0, 300.0, 300.0, 0.0]},
         "gcode_move": {"gcode_position": [0, 0, 0, 0], "speed_factor": 1.0, "extrude_factor": 1.0},
         "fan": {"speed": 0.0},
+        "fan_generic abluft": {"speed": 0.0},
         "extruder": {"temperature": 24.1, "target": 0.0},
         "heater_bed": {"temperature": 22.4, "target": 0.0},
         "heater_generic chamber": {"temperature": 25.0, "target": 0.0},
@@ -115,6 +116,14 @@ class SimulatedClient:
                 for axis in axes:
                     position["xyz".index(axis)] = 0.0
                 toolhead.update({"homed_axes": "".join(a for a in "xyz" if a in homed), "position": position})
+            elif words[:1] == ["M106"]:
+                value = float(words[1][1:]) if len(words) > 1 else 255.0
+                self.printer.update_objects({"fan": {"speed": value / 255.0}})
+            elif words[:1] == ["M107"]:
+                self.printer.update_objects({"fan": {"speed": 0.0}})
+            elif words[:1] == ["SET_FAN_SPEED"]:
+                params = dict(word.split("=", 1) for word in words[1:])
+                self.printer.update_objects({"fan_generic " + params["FAN"]: {"speed": float(params["SPEED"])}})
             elif words[:1] == ["M109"] and len(words) > 1:
                 # warten entfaellt: die Duese ist sofort auf Temperatur
                 target = float(words[1][1:])

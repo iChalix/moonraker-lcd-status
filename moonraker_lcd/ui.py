@@ -23,6 +23,8 @@ HOMING = (
 #: Schrittweiten beim Einstellen einer Achsposition (mm)
 MOVE_STEPS = (0.1, 1.0, 10.0)
 #: waehlbares Tempo beim Bewegen (mm/min); der Wert aus der Konfiguration kommt dazu
+#: Prozent je Rastung beim Einstellen eines Luefters
+FAN_STEP = 10
 MOVE_SPEEDS = (50, 100, 200, 300, 500, 1000, 1500, 2000, 3000, 4000, 5000, 6000, 8000, 10000)
 
 
@@ -30,7 +32,7 @@ MOVE_SPEEDS = (50, 100, 200, 300, 500, 1000, 1500, 2000, 3000, 4000, 5000, 6000,
 class Action:
     """Was der Dienst ausfuehren soll."""
 
-    kind: str  # rpc | gcode | power | refresh | back | submenu | edit | jog | step | speed | filament | ftemp
+    kind: str  # rpc | gcode | power | refresh | back | submenu | edit | jog | step | speed | filament | ftemp | fan
     label: str
     method: str = ""
     payload: str = ""
@@ -84,6 +86,7 @@ class UI:
         self._ftemp = menu.filament_temperature or next(
             (p.extruder for p in menu.preheats if p.extruder), 200)
         self._ftemp_edit = None  # Temperatur beim Einstellen fuer Laden/Entladen
+        self._fan_edit = None  # [Action, Prozent] beim Einstellen eines Luefters
         self._question = None  # Action, die auf Ja/Nein wartet
         self._answer = False
         self._notice = None    # (Text, Ablaufzeit)
@@ -111,6 +114,8 @@ class UI:
             self._adjust_jog(steps)
         elif self._step_edit is not None:
             self._step_edit = min(max(self._step_edit + steps, 0), len(MOVE_STEPS) - 1)
+        elif self._fan_edit is not None:
+            self._fan_edit[1] = min(max(self._fan_edit[1] + steps * FAN_STEP, 0), 100)
         elif self._ftemp_edit is not None:
             low, high = self._ftemp_limits()
             self._ftemp_edit = min(max(self._ftemp_edit + steps * self._config.menu.temperature_step, low), high)
@@ -157,6 +162,9 @@ class UI:
         if self._ftemp_edit is not None:
             self._ftemp, self._ftemp_edit = self._ftemp_edit, None
             return
+        if self._fan_edit is not None:
+            self._finish_fan(now)
+            return
         if self._edit is not None:
             self._finish_edit(now)
             return
@@ -176,6 +184,8 @@ class UI:
             self._step_edit = self._move_step
         elif action.kind == "speed":
             self._speed_edit = [action.payload, self._speeds[action.payload]]
+        elif action.kind == "fan":
+            self._fan_edit = [action, self._fan_percent(action.payload)]
         elif action.kind == "ftemp":
             low, high = self._ftemp_limits()
             self._ftemp_edit = min(max(self._ftemp, low), high)
@@ -197,8 +207,8 @@ class UI:
             self._question = None
         elif self._edit is not None:
             self._edit = None
-        elif any(edit is not None for edit in (self._jog, self._step_edit, self._speed_edit, self._ftemp_edit)):
-            self._jog = self._step_edit = self._speed_edit = self._ftemp_edit = None
+        elif any(edit is not None for edit in self._value_edits()):
+            self._jog = self._step_edit = self._speed_edit = self._ftemp_edit = self._fan_edit = None
         elif self._menu is not None:
             self._leave_menu()
         else:
@@ -224,6 +234,11 @@ class UI:
                 Action("speed", "%s %s" % (self._t("speed"), axis.upper()), payload=axis, when="idle")
                 for axis in "xyz"
             ] + [Action("gcode", self._t("motors_off"), payload="M84", when="idle")]
+            return [action for action in candidates if self._allowed(action)]
+        if menu_id == "fans":
+            candidates = [Action(BACK, self._t("back"))] + [
+                Action("fan", name, payload=obj, when="ready") for obj, name, _ in self._printer.fans
+            ]
             return [action for action in candidates if self._allowed(action)]
         if menu_id == "filament":
             candidates = [
@@ -254,6 +269,8 @@ class UI:
             candidates.append(Action("submenu", t("move"), payload="move", when="idle"))
         if menu.heating and (self._printer.extruder or self._printer.bed):
             candidates.append(Action("submenu", t("heat"), payload="heat", when="ready"))
+        if menu.fans and self._printer.fans:
+            candidates.append(Action("submenu", t("fan"), payload="fans", when="ready"))
         if menu.filament and self._printer.extruder:
             candidates.append(Action("submenu", t("filament"), payload="filament", when="idle"))
         for item in menu.items:
@@ -312,7 +329,7 @@ class UI:
 
     def _close_menu(self) -> None:
         self._menu, self._menu_id, self._stack = None, MAIN, []
-        self._edit = self._jog = self._step_edit = self._speed_edit = self._ftemp_edit = None
+        self._edit = self._jog = self._step_edit = self._speed_edit = self._ftemp_edit = self._fan_edit = None
 
     def _enter_menu(self, menu_id: str) -> None:
         self._stack.append((self._menu_id, self._cursor))
@@ -337,6 +354,8 @@ class UI:
             self._edit = None
         if self._jog is not None and not self._allowed(self._jog[0]):
             self._jog = None
+        if self._fan_edit is not None and not self._allowed(self._fan_edit[0]):
+            self._fan_edit = None
         if self._menu is None:
             return
         selected = self._menu[self._cursor]
@@ -391,6 +410,28 @@ class UI:
         script = "SAVE_GCODE_STATE NAME=lcd_move\nG91\nG1 %s%s F%d\nRESTORE_GCODE_STATE NAME=lcd_move" % (
             axis.upper(), _number(delta), speed)
         self._on_action(Action("gcode", action.label, payload=script, when="idle"))
+
+    def _value_edits(self) -> tuple:
+        return self._jog, self._step_edit, self._speed_edit, self._ftemp_edit, self._fan_edit
+
+    def _fan_percent(self, name: str) -> int:
+        for obj, _, speed in self._printer.fans:
+            if obj == name:
+                return int(round(speed * 100))
+        return 0
+
+    def _finish_fan(self, now: float) -> None:
+        """Drehzahl senden; das Luefter-Menue bleibt offen."""
+        action, percent = self._fan_edit
+        self._fan_edit = None
+        if not self._allowed(action):
+            self.notice(self._t("not_now"), now)
+            return
+        if action.payload == "fan":
+            script = "M106 S%d" % int(percent * 255 / 100 + 0.5) if percent else "M107"
+        else:
+            script = "SET_FAN_SPEED FAN=%s SPEED=%s" % (action.payload.split(" ", 1)[1], _number(percent / 100))
+        self._on_action(Action("gcode", action.label, payload=script, when="ready"))
 
     def _ftemp_limits(self) -> tuple:
         """Laden/Entladen: nicht unter min_extrude_temp, nicht ueber max_temp."""
@@ -506,6 +547,9 @@ class UI:
         if self._ftemp_edit is not None:
             value = screen.spread(self._t("temperature"), "%d°" % self._ftemp_edit, self.cols)
             return self._render_value(ctx, value)
+        if self._fan_edit is not None:
+            action, percent = self._fan_edit
+            return self._render_value(ctx, screen.spread(action.label, "%d%%" % percent, self.cols))
         if self._menu is not None:
             return self._render_menu(ctx)
         return page_list[self._page]()
@@ -588,6 +632,8 @@ class UI:
             return "%s: %d" % (action.label, self._speeds[action.payload])
         if action.kind == "ftemp":
             return "%s: %d°" % (action.label, self._ftemp)
+        if action.kind == "fan":
+            return "%s: %d%%" % (action.label, self._fan_percent(action.payload))
         if action.kind == "submenu":
             return action.label + " >"
         return action.label

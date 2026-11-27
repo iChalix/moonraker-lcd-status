@@ -161,6 +161,8 @@ class Printer:
                 wanted[name] = HEATER_FIELDS
             elif name.startswith(SENSOR_PREFIXES):
                 wanted[name] = ["temperature"]
+            elif name.startswith("fan_generic "):
+                wanted[name] = ["speed"]
         return wanted
 
     # ----------------------------------------------------------- Auswertung
@@ -314,6 +316,17 @@ class Printer:
     def fan(self):
         speed = self.get("fan", "speed")
         return None if speed is None else number(speed)
+
+    @property
+    def fans(self) -> list:
+        """Per G-Code steuerbare Luefter: (Objekt, Anzeigename, Drehzahl 0..1)."""
+        found = []
+        if self.get("fan", "speed") is not None:
+            found.append(("fan", self._config.names.get("fan") or self._t("part_fan"), number(self.get("fan", "speed"))))
+        for name in sorted(self.objects):
+            if name.startswith("fan_generic ") and self.get(name, "speed") is not None:
+                found.append((name, self._name(name), number(self.get(name, "speed"))))
+        return found
 
     @property
     def speed_factor(self) -> float:

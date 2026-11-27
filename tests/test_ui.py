@@ -146,9 +146,10 @@ class MenuTest(unittest.TestCase):
     def test_entries_depend_on_the_state(self):
         ui, _ = make_ui(make_printer())
         self.assertEqual(self.labels(ui),
-                         ["Zurück", "Homing", "Achsen bewegen", "Heizen", "Filament", "Anzeige auffrischen"])
+                         ["Zurück", "Homing", "Achsen bewegen", "Heizen", "Lüfter", "Filament",
+                          "Anzeige auffrischen"])
         ui, _ = make_ui(printing_printer())
-        self.assertEqual(self.labels(ui), ["Zurück", "Pause", "Abbrechen", "Heizen", "Anzeige auffrischen"])
+        self.assertEqual(self.labels(ui), ["Zurück", "Pause", "Abbrechen", "Heizen", "Lüfter", "Anzeige auffrischen"])
         printer = printing_printer()
         printer.update_objects({"print_stats": {"state": "paused"}})
         ui, _ = make_ui(printer)
@@ -316,6 +317,7 @@ class HomingHeatingTest(unittest.TestCase):
     def test_submenus_can_be_switched_off(self):
         config = Config()
         config.menu.homing = config.menu.heating = config.menu.move = config.menu.filament = False
+        config.menu.fans = False
         ui, _ = make_ui(make_printer(config), config)
         self.assertEqual([a.label for a in ui.actions()], ["Zurück", "Anzeige auffrischen"])
 
@@ -661,6 +663,75 @@ class FilamentTest(unittest.TestCase):
         ui, _ = make_ui(printing_printer())
         self.assertNotIn("Filament", [a.label for a in ui.actions()])
         self.assertEqual([a.label for a in ui.actions("filament")], ["Zurück"])
+
+
+class FanTest(unittest.TestCase):
+    select = MenuTest.select
+    select_here = HomingHeatingTest.select_here
+
+    def test_submenu_lists_controllable_fans(self):
+        ui, _ = make_ui(make_printer(objects={"fan": {"speed": 0.8}}))
+        self.select(ui, "Lüfter")
+        self.assertEqual([line.strip() for line in ui.render(1.0, WALL)][:3],
+                         [">Zurück", "Bauteillüfter: 80%", "Abluft: 0%"])
+
+    def test_part_fan(self):
+        ui, calls = make_ui(make_printer())
+        self.select(ui, "Lüfter")
+        self.select_here(ui, "Bauteillüfter")
+        self.assertEqual(ui.render(1.0, WALL)[1], "Bauteillüfter     0%")
+        ui.rotate(5, 1.0)
+        self.assertEqual(calls, [])  # erst beim Klick
+        ui.click(1.0)
+        self.assertEqual(calls[0].payload, "M106 S128")
+        self.assertTrue(any(line.startswith(">Bauteillüfter") for line in ui.render(1.0, WALL)))
+        self.select_here(ui, "Bauteillüfter")
+        ui.rotate(20, 1.0)
+        self.assertEqual(ui.render(1.0, WALL)[1], "Bauteillüfter   100%")
+        ui.rotate(-20, 1.0)
+        ui.click(1.0)
+        self.assertEqual(calls[1].payload, "M107")
+
+    def test_generic_fan_and_cancel(self):
+        ui, calls = make_ui(make_printer())
+        self.select(ui, "Lüfter")
+        self.select_here(ui, "Abluft")
+        ui.rotate(3, 1.0)
+        ui.long_press(1.0)
+        self.assertEqual(calls, [])
+        self.select_here(ui, "Abluft")
+        ui.rotate(3, 1.0)
+        ui.click(1.0)
+        self.assertEqual(calls[0].payload, "SET_FAN_SPEED FAN=abluft SPEED=0.3")
+
+    def test_also_while_printing(self):
+        ui, calls = make_ui(printing_printer())
+        self.select(ui, "Lüfter")
+        self.select_here(ui, "Bauteillüfter")
+        ui.rotate(-1, 1.0)
+        ui.click(1.0)
+        self.assertEqual(calls[0].payload, "M106 S179")
+
+    def test_names_and_no_fans(self):
+        config = Config()
+        config.names = {"fan": "Kühlung"}
+        ui, _ = make_ui(make_printer(config), config)
+        self.assertEqual([a.label for a in ui.actions("fans")][1:], ["Kühlung", "Abluft"])
+        printer = make_printer()
+        for name in ("fan", "fan_generic abluft"):
+            del printer.objects[name]
+        ui, _ = make_ui(printer)
+        self.assertNotIn("Lüfter", [a.label for a in ui.actions()])
+
+    def test_editing_stops_when_klipper_stops(self):
+        printer = make_printer()
+        ui, calls = make_ui(printer)
+        self.select(ui, "Lüfter")
+        self.select_here(ui, "Abluft")
+        printer.set_klippy("shutdown")
+        ui.render(1.1, WALL)
+        ui.click(1.2)
+        self.assertEqual(calls, [])
 
 
 class BacklightTest(unittest.TestCase):

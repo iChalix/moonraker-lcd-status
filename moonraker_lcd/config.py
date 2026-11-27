@@ -115,6 +115,8 @@ class MenuConfig:
     move_speed_y: int = 3000
     move_speed_z: int = 200
     heating: bool = True
+    #: Untermenue Luefter: Bauteilluefter und [fan_generic], auch waehrend des Drucks
+    fans: bool = True
     #: Untermenue Filament: LOAD_FILAMENT/UNLOAD_FILAMENT, wenn es die Makros gibt,
     #: sonst eingebauter Ablauf mit diesen Laengen (mm) und Tempi (mm/min)
     filament: bool = True
@@ -227,7 +229,7 @@ _SECTIONS = {
     "progress": {"source", "eta"},
     "menu": {
         "enabled", "timeout", "pause", "cancel", "firmware_restart", "homing", "move",
-        "move_speed_x", "move_speed_y", "move_speed_z", "heating", "filament", "filament_temperature",
+        "move_speed_x", "move_speed_y", "move_speed_z", "heating", "fans", "filament", "filament_temperature",
         "filament_load_length", "filament_purge_length", "filament_unload_length", "filament_fast_speed",
         "filament_slow_speed", "temperature_step", "reboot", "shutdown",
     },
@@ -339,8 +341,8 @@ def _apply(cfg: Config, parser) -> None:
             setattr(n, key, sec.getint(key, getattr(n, key)))
         for key in ("filament_load_length", "filament_purge_length", "filament_unload_length"):
             setattr(n, key, sec.getfloat(key, getattr(n, key)))
-        for key in ("enabled", "pause", "cancel", "firmware_restart", "homing", "move", "heating", "filament",
-                    "reboot", "shutdown"):
+        for key in ("enabled", "pause", "cancel", "firmware_restart", "homing", "move", "heating", "fans",
+                    "filament", "reboot", "shutdown"):
             setattr(n, key, sec.getboolean(key, getattr(n, key)))
 
     preheats = []

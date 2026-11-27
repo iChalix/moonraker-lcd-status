@@ -13,6 +13,12 @@ Release einen datierten Abschnitt.
 
 ## [Unreleased]
 
+### Neu
+
+* Untermenü **Lüfter**: Bauteillüfter (`M106`/`M107`) und jeder `[fan_generic]`
+  (`SET_FAN_SPEED`) in 10-%-Schritten, auch während des Drucks. Abschalten mit
+  `[menu] fans = no`; Namen über `[names]`.
+
 ## [1.3.0] - 2026-11-27
 
 ### Neu

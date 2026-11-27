@@ -102,6 +102,9 @@ Im Menü stehen außerdem:
   3000/3000/200) stellt man genauso ein. Nur ohne Druck und nur für Achsen nach
   dem Homing; die Grenzen kommen aus Klipper, Z nie unter 0. „Motoren aus“ sendet
   `M84`.
+* **Lüfter ›** – Bauteillüfter und jeder `[fan_generic]` in 10-%-Schritten
+  (Klick, drehen, Klick), auch während des Drucks. Automatische Lüfter (Hotend,
+  Elektronik) regelt Klipper selbst, sie erscheinen nicht.
 * **Filament ›** – Laden, Entladen und die Temperatur dafür (Start: erste
   Vorheiz-Vorgabe, nicht unter `min_extrude_temp`). Es wird aufgeheizt und
   gewartet; gibt es in Klipper `LOAD_FILAMENT`/`UNLOAD_FILAMENT`, laufen danach
