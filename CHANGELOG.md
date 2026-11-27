@@ -13,6 +13,8 @@ Release einen datierten Abschnitt.
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-27
+
 ### Neu
 
 * Untermenü **Lüfter**: Bauteillüfter (`M106`/`M107`) und jeder `[fan_generic]`
