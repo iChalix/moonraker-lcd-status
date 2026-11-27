@@ -13,6 +13,8 @@ Release einen datierten Abschnitt.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-27
+
 ### Neu
 
 * Untermenü **Homing**: alle Achsen, X und Y zusammen, X, Y oder Z (nur ohne Druck).

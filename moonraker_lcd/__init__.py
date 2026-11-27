@@ -5,7 +5,7 @@ Displayzeilen und schickt sie seriell an den Arduino. Der meldet den
 Drehgeber zurueck; Seiten, Menue und Sprache liegen vollstaendig hier.
 """
 
-__version__ = "1.0.1"
+__version__ = "1.1.0"
 
 import os
 import subprocess
