@@ -100,6 +100,8 @@ class Printer:
         self.cpu_temp = None
         self.cpu_load = None
         self.memory_load = None
+        #: Namen der G-Code-Makros in Klipper (gross geschrieben)
+        self.macros: set = set()
 
     # ----------------------------------------------------------- Eingang
 
@@ -150,6 +152,7 @@ class Printer:
     def subscription(self, available) -> dict:
         """Aus allen Objekten des Druckers die fuer die Anzeige noetigen."""
         available = list(available)
+        self.macros = {name[len("gcode_macro "):].upper() for name in available if name.startswith("gcode_macro ")}
         wanted = {name: fields for name, fields in BASE_OBJECTS.items() if name in available}
         for name in available:
             if name in self._config.hidden:
@@ -397,11 +400,15 @@ class Printer:
     def axis_limits(self, axis: str) -> tuple:
         return self._axis_value("axis_minimum", axis, 0.0), self._axis_value("axis_maximum", axis, 0.0)
 
+    def setting(self, section: str, key: str, default: float) -> float:
+        """Zahl aus Klippers Konfiguration (``configfile.settings``)."""
+        settings = self.get("configfile", "settings", {}) or {}
+        value = number((settings.get(section) or {}).get(key), 0.0)
+        return value if value > 0 else default
+
     def max_temp(self, name: str) -> float:
         """``max_temp`` aus Klippers Konfiguration, sonst 300."""
-        settings = self.get("configfile", "settings", {}) or {}
-        value = number((settings.get(name) or {}).get("max_temp"), 0.0)
-        return value if value > 0 else 300.0
+        return self.setting(name, "max_temp", 300.0)
 
     @property
     def bed(self):

@@ -13,6 +13,14 @@ Release einen datierten Abschnitt.
 
 ## [Unreleased]
 
+### Neu
+
+* Untermenü **Filament**: Laden und Entladen mit im Menü wählbarer Temperatur.
+  Nutzt `LOAD_FILAMENT`/`UNLOAD_FILAMENT`, wenn es die Makros gibt, sonst einen
+  eingebauten Ablauf (Direktantrieb: 50 + 30 mm laden, 60 mm entladen; in
+  `[menu] filament_*` einstellbar). Lange Fahrten werden in Stücke bis
+  `max_extrude_only_distance` geteilt.
+
 ## [1.2.0] - 2026-11-27
 
 ### Neu

@@ -30,7 +30,7 @@ MOVE_SPEEDS = (50, 100, 200, 300, 500, 1000, 1500, 2000, 3000, 4000, 5000, 6000,
 class Action:
     """Was der Dienst ausfuehren soll."""
 
-    kind: str  # rpc | gcode | power | refresh | back | submenu | edit | jog | step | speed
+    kind: str  # rpc | gcode | power | refresh | back | submenu | edit | jog | step | speed | filament | ftemp
     label: str
     method: str = ""
     payload: str = ""
@@ -81,6 +81,9 @@ class UI:
         menu = config.menu
         self._speeds = {"x": menu.move_speed_x, "y": menu.move_speed_y, "z": menu.move_speed_z}
         self._speed_edit = None  # [Achse, Tempo] beim Einstellen des Tempos
+        self._ftemp = menu.filament_temperature or next(
+            (p.extruder for p in menu.preheats if p.extruder), 200)
+        self._ftemp_edit = None  # Temperatur beim Einstellen fuer Laden/Entladen
         self._question = None  # Action, die auf Ja/Nein wartet
         self._answer = False
         self._notice = None    # (Text, Ablaufzeit)
@@ -108,6 +111,9 @@ class UI:
             self._adjust_jog(steps)
         elif self._step_edit is not None:
             self._step_edit = min(max(self._step_edit + steps, 0), len(MOVE_STEPS) - 1)
+        elif self._ftemp_edit is not None:
+            low, high = self._ftemp_limits()
+            self._ftemp_edit = min(max(self._ftemp_edit + steps * self._config.menu.temperature_step, low), high)
         elif self._speed_edit is not None:
             axis, speed = self._speed_edit
             values = self._speed_values(axis)
@@ -148,6 +154,9 @@ class UI:
             axis, speed = self._speed_edit
             self._speeds[axis], self._speed_edit = speed, None
             return
+        if self._ftemp_edit is not None:
+            self._ftemp, self._ftemp_edit = self._ftemp_edit, None
+            return
         if self._edit is not None:
             self._finish_edit(now)
             return
@@ -167,6 +176,12 @@ class UI:
             self._step_edit = self._move_step
         elif action.kind == "speed":
             self._speed_edit = [action.payload, self._speeds[action.payload]]
+        elif action.kind == "ftemp":
+            low, high = self._ftemp_limits()
+            self._ftemp_edit = min(max(self._ftemp, low), high)
+        elif action.kind == "filament":
+            self._execute(Action("gcode", action.label, payload=self._filament_script(action.payload),
+                                 when="idle"), now)
         elif action.confirm:
             self._question, self._answer = action, False
         else:
@@ -182,8 +197,8 @@ class UI:
             self._question = None
         elif self._edit is not None:
             self._edit = None
-        elif self._jog is not None or self._step_edit is not None or self._speed_edit is not None:
-            self._jog = self._step_edit = self._speed_edit = None
+        elif any(edit is not None for edit in (self._jog, self._step_edit, self._speed_edit, self._ftemp_edit)):
+            self._jog = self._step_edit = self._speed_edit = self._ftemp_edit = None
         elif self._menu is not None:
             self._leave_menu()
         else:
@@ -210,6 +225,14 @@ class UI:
                 for axis in "xyz"
             ] + [Action("gcode", self._t("motors_off"), payload="M84", when="idle")]
             return [action for action in candidates if self._allowed(action)]
+        if menu_id == "filament":
+            candidates = [
+                Action(BACK, self._t("back")),
+                Action("filament", self._t("load"), payload="load", when="idle"),
+                Action("filament", self._t("unload"), payload="unload", when="idle"),
+                Action("ftemp", self._t("temperature"), when="idle"),
+            ]
+            return [action for action in candidates if self._allowed(action)]
         if menu_id == "heat":
             return [action for action in self._heat_actions() if self._allowed(action)]
         t, menu = self._t, self._config.menu
@@ -231,6 +254,8 @@ class UI:
             candidates.append(Action("submenu", t("move"), payload="move", when="idle"))
         if menu.heating and (self._printer.extruder or self._printer.bed):
             candidates.append(Action("submenu", t("heat"), payload="heat", when="ready"))
+        if menu.filament and self._printer.extruder:
+            candidates.append(Action("submenu", t("filament"), payload="filament", when="idle"))
         for item in menu.items:
             candidates.append(
                 Action(
@@ -287,7 +312,7 @@ class UI:
 
     def _close_menu(self) -> None:
         self._menu, self._menu_id, self._stack = None, MAIN, []
-        self._edit = self._jog = self._step_edit = self._speed_edit = None
+        self._edit = self._jog = self._step_edit = self._speed_edit = self._ftemp_edit = None
 
     def _enter_menu(self, menu_id: str) -> None:
         self._stack.append((self._menu_id, self._cursor))
@@ -366,6 +391,31 @@ class UI:
         script = "SAVE_GCODE_STATE NAME=lcd_move\nG91\nG1 %s%s F%d\nRESTORE_GCODE_STATE NAME=lcd_move" % (
             axis.upper(), _number(delta), speed)
         self._on_action(Action("gcode", action.label, payload=script, when="idle"))
+
+    def _ftemp_limits(self) -> tuple:
+        """Laden/Entladen: nicht unter min_extrude_temp, nicht ueber max_temp."""
+        extruder = self._printer.extruder
+        name = extruder.object if extruder else "extruder"
+        return int(self._printer.setting(name, "min_extrude_temp", 170.0)), int(self._printer.max_temp(name))
+
+    def _filament_script(self, kind: str) -> str:
+        """Aufheizen und warten, dann Makro oder eingebauter Ablauf."""
+        heat = "M109 S%d" % self._ftemp
+        macro = "LOAD_FILAMENT" if kind == "load" else "UNLOAD_FILAMENT"
+        if macro in self._printer.macros:
+            return "\n".join((heat, macro))
+        menu, extruder = self._config.menu, self._printer.extruder
+        chunk = self._printer.setting(extruder.object if extruder else "extruder", "max_extrude_only_distance", 50.0)
+        lines = ["SAVE_GCODE_STATE NAME=lcd_filament", heat, "M83"]
+        if kind == "load":
+            lines += _extrude(menu.filament_load_length, menu.filament_fast_speed, chunk)
+            lines += _extrude(menu.filament_purge_length, menu.filament_slow_speed, chunk)
+        else:
+            # Spitze kurz anschmelzen, dann zurueckziehen
+            lines += _extrude(5.0, menu.filament_slow_speed, chunk)
+            lines += _extrude(-menu.filament_unload_length, menu.filament_fast_speed, chunk)
+        lines.append("RESTORE_GCODE_STATE NAME=lcd_filament")
+        return "\n".join(lines)
 
     def _speed_values(self, axis: str) -> list:
         return sorted(set(MOVE_SPEEDS) | {self._speeds[axis], self._speed_edit[1]})
@@ -453,6 +503,9 @@ class UI:
             return self._render_step(ctx)
         if self._speed_edit is not None:
             return self._render_speed(ctx)
+        if self._ftemp_edit is not None:
+            value = screen.spread(self._t("temperature"), "%d°" % self._ftemp_edit, self.cols)
+            return self._render_value(ctx, value)
         if self._menu is not None:
             return self._render_menu(ctx)
         return page_list[self._page]()
@@ -512,6 +565,10 @@ class UI:
     def _render_speed(self, ctx) -> list:
         axis, speed = self._speed_edit
         value = screen.spread("%s %s" % (self._t("speed"), axis.upper()), self._speed_text(speed), self.cols)
+        return self._render_value(ctx, value)
+
+    def _render_value(self, ctx, value: str) -> list:
+        """Einzelner Wert beim Einstellen, mit Hinweis."""
         if self.rows < 4:
             return ctx.finish([value, screen.center(self._t("edit_hint"), self.cols)])
         return ctx.finish(["", value, "", screen.center(self._t("edit_hint"), self.cols)])
@@ -529,6 +586,8 @@ class UI:
             return "%s: %s mm" % (action.label, _number(MOVE_STEPS[self._move_step]))
         if action.kind == "speed":
             return "%s: %d" % (action.label, self._speeds[action.payload])
+        if action.kind == "ftemp":
+            return "%s: %d°" % (action.label, self._ftemp)
         if action.kind == "submenu":
             return action.label + " >"
         return action.label
@@ -556,3 +615,13 @@ def _set_target(heater: str, value: int) -> str:
 def _number(value: float) -> str:
     """1.0 -> "1", 0.10 -> "0.1", -2.5 -> "-2.5"."""
     return ("%.3f" % value).rstrip("0").rstrip(".")
+
+
+def _extrude(length: float, speed: int, chunk: float) -> list:
+    """Extruderfahrt in Stuecke bis ``chunk`` (Klippers max_extrude_only_distance)."""
+    lines, rest, sign = [], round(abs(length), 3), -1 if length < 0 else 1
+    while rest > 0:
+        part = min(rest, chunk)
+        lines.append("G1 E%s F%d" % (_number(sign * part), speed))
+        rest = round(rest - part, 3)
+    return lines

@@ -24,6 +24,7 @@ TEXTS = {
         "current": "Ist", "target": "Ziel", "edit_hint": "Klick = OK",
         "move": "Achsen bewegen", "axis_x": "X-Achse", "axis_y": "Y-Achse", "axis_z": "Z-Achse",
         "motors_off": "Motoren aus", "step": "Schritt", "home_first": "Erst Homing nötig",
+        "load": "Laden", "unload": "Entladen", "temperature": "Temperatur",
     },
     "en": {
         "standby": "ready", "busy": "busy", "printing": "printing", "paused": "paused",
@@ -46,6 +47,7 @@ TEXTS = {
         "current": "Now", "target": "Target", "edit_hint": "Click = OK",
         "move": "Move axes", "axis_x": "X axis", "axis_y": "Y axis", "axis_z": "Z axis",
         "motors_off": "Motors off", "step": "Step", "home_first": "Home first",
+        "load": "Load", "unload": "Unload", "temperature": "Temperature",
     },
 }
 

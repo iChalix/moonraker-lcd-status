@@ -145,7 +145,8 @@ class MenuTest(unittest.TestCase):
 
     def test_entries_depend_on_the_state(self):
         ui, _ = make_ui(make_printer())
-        self.assertEqual(self.labels(ui), ["Zurück", "Homing", "Achsen bewegen", "Heizen", "Anzeige auffrischen"])
+        self.assertEqual(self.labels(ui),
+                         ["Zurück", "Homing", "Achsen bewegen", "Heizen", "Filament", "Anzeige auffrischen"])
         ui, _ = make_ui(printing_printer())
         self.assertEqual(self.labels(ui), ["Zurück", "Pause", "Abbrechen", "Heizen", "Anzeige auffrischen"])
         printer = printing_printer()
@@ -314,7 +315,7 @@ class HomingHeatingTest(unittest.TestCase):
 
     def test_submenus_can_be_switched_off(self):
         config = Config()
-        config.menu.homing = config.menu.heating = config.menu.move = False
+        config.menu.homing = config.menu.heating = config.menu.move = config.menu.filament = False
         ui, _ = make_ui(make_printer(config), config)
         self.assertEqual([a.label for a in ui.actions()], ["Zurück", "Anzeige auffrischen"])
 
@@ -586,6 +587,80 @@ class MoveTest(unittest.TestCase):
         self.select_here(ui, "Z-Achse")
         ui.rotate(2, 1.0)
         self.assertEqual(ui.render(1.0, WALL), ["Z-Achse      1.5", "Ziel      3.5 mm"])
+
+
+def filament(*moves, temp=200):
+    return "\n".join(["SAVE_GCODE_STATE NAME=lcd_filament", "M109 S%d" % temp, "M83"] + list(moves)
+                     + ["RESTORE_GCODE_STATE NAME=lcd_filament"])
+
+
+class FilamentTest(unittest.TestCase):
+    select = MenuTest.select
+    select_here = HomingHeatingTest.select_here
+
+    def run_item(self, label, printer=None, config=None):
+        ui, calls = make_ui(printer or make_printer(config), config)
+        self.select(ui, "Filament")
+        self.select_here(ui, label)
+        return ui, calls
+
+    def test_submenu(self):
+        ui, _ = make_ui(make_printer())
+        self.select(ui, "Filament")
+        self.assertEqual([line.strip() for line in ui.render(1.0, WALL)],
+                         [">Zurück", "Laden", "Entladen", "Temperatur: 200°"])
+
+    def test_load_and_unload_built_in(self):
+        ui, calls = self.run_item("Laden")
+        self.assertEqual(calls[0].payload, filament("G1 E50 F1200", "G1 E30 F300"))
+        self.assertNotIn(">", "".join(ui.render(1.0, WALL)))  # Menue geschlossen
+        _, calls = self.run_item("Entladen")
+        # Klipper erlaubt nur 50 mm je reiner Extruderfahrt
+        self.assertEqual(calls[0].payload, filament("G1 E5 F300", "G1 E-50 F1200", "G1 E-10 F1200"))
+
+    def test_chunks_follow_max_extrude_only_distance(self):
+        printer = make_printer(objects={"configfile": {"settings": {"extruder": {
+            "max_extrude_only_distance": 20.0}}}})
+        _, calls = self.run_item("Laden", printer)
+        self.assertEqual(calls[0].payload, filament(
+            "G1 E20 F1200", "G1 E20 F1200", "G1 E10 F1200", "G1 E20 F300", "G1 E10 F300"))
+
+    def test_macros_are_preferred(self):
+        printer = make_printer()
+        printer.subscription(list(printer.objects) + ["gcode_macro load_filament"])
+        _, calls = self.run_item("Laden", printer)
+        self.assertEqual(calls[0].payload, "M109 S200\nLOAD_FILAMENT")
+        _, calls = self.run_item("Entladen", printer)
+        self.assertTrue(calls[0].payload.startswith("SAVE_GCODE_STATE"))  # kein UNLOAD-Makro
+
+    def test_own_lengths_and_temperature(self):
+        config = Config()
+        config.menu.filament_temperature = 240
+        config.menu.filament_purge_length = 0
+        config.menu.filament_load_length = 400
+        config.menu.filament_fast_speed = 3000
+        _, calls = self.run_item("Laden", config=config)
+        self.assertEqual(calls[0].payload, filament(*["G1 E50 F3000"] * 8, temp=240))
+
+    def test_temperature_in_the_menu(self):
+        ui, calls = self.run_item("Temperatur")
+        self.assertEqual(ui.render(1.0, WALL)[1], "Temperatur      200°")
+        ui.rotate(2, 1.0)
+        ui.click(1.0)
+        self.assertIn("Temperatur: 210°", [line[1:].rstrip() for line in ui.render(1.0, WALL)])
+        self.select_here(ui, "Temperatur")
+        ui.rotate(-50, 1.0)
+        self.assertEqual(ui.render(1.0, WALL)[1], "Temperatur      170°")  # min_extrude_temp
+        ui.rotate(50, 1.0)
+        self.assertEqual(ui.render(1.0, WALL)[1], "Temperatur      280°")  # max_temp
+        ui.long_press(1.0)  # verwerfen
+        self.select_here(ui, "Laden")
+        self.assertIn("M109 S210", calls[0].payload)
+
+    def test_not_while_printing(self):
+        ui, _ = make_ui(printing_printer())
+        self.assertNotIn("Filament", [a.label for a in ui.actions()])
+        self.assertEqual([a.label for a in ui.actions("filament")], ["Zurück"])
 
 
 class BacklightTest(unittest.TestCase):

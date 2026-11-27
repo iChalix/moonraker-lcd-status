@@ -115,7 +115,11 @@ class SimulatedClient:
                 for axis in axes:
                     position["xyz".index(axis)] = 0.0
                 toolhead.update({"homed_axes": "".join(a for a in "xyz" if a in homed), "position": position})
-            elif words[:1] == ["G1"] and len(words) > 1:
+            elif words[:1] == ["M109"] and len(words) > 1:
+                # warten entfaellt: die Duese ist sofort auf Temperatur
+                target = float(words[1][1:])
+                self.printer.update_objects({"extruder": {"target": target, "temperature": target}})
+            elif words[:1] == ["G1"] and len(words) > 1 and words[1][0] in "XYZ":
                 position = list(toolhead.get("position", [0.0] * 4))
                 position["XYZ".index(words[1][0])] += float(words[1][1:])
                 toolhead["position"] = position

@@ -73,7 +73,9 @@ class ConfigTest(unittest.TestCase):
                          [("TPU", 225, 50), ("Bett", 0, 90)])
         for text in ("[preheat A]\n", "[preheat A]\nbed = -1\n", "[preheat]\nbed = 60\n",
                      "[preheat A]\nnozzle = 200\n", "[menu]\ntemperature_step = 0\n",
-                     "[menu]\nmove_speed_z = 0\n", "[menu]\nmove_speed_x = schnell\n"):
+                     "[menu]\nmove_speed_z = 0\n", "[menu]\nmove_speed_x = schnell\n",
+                     "[menu]\nfilament_load_length = 0\n", "[menu]\nfilament_slow_speed = 0\n",
+                     "[menu]\nfilament_temperature = -1\n"):
             with self.assertRaises(config_module.ConfigError, msg=text):
                 load(text)
 

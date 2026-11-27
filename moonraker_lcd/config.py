@@ -115,6 +115,15 @@ class MenuConfig:
     move_speed_y: int = 3000
     move_speed_z: int = 200
     heating: bool = True
+    #: Untermenue Filament: LOAD_FILAMENT/UNLOAD_FILAMENT, wenn es die Makros gibt,
+    #: sonst eingebauter Ablauf mit diesen Laengen (mm) und Tempi (mm/min)
+    filament: bool = True
+    filament_temperature: int = 0  # 0 = erste Vorheiz-Vorgabe
+    filament_load_length: float = 50.0
+    filament_purge_length: float = 30.0
+    filament_unload_length: float = 60.0
+    filament_fast_speed: int = 1200
+    filament_slow_speed: int = 300
     #: Schrittweite beim Einstellen einer Zieltemperatur (Grad je Rastung)
     temperature_step: int = 5
     reboot: bool = False
@@ -218,7 +227,9 @@ _SECTIONS = {
     "progress": {"source", "eta"},
     "menu": {
         "enabled", "timeout", "pause", "cancel", "firmware_restart", "homing", "move",
-        "move_speed_x", "move_speed_y", "move_speed_z", "heating", "temperature_step", "reboot", "shutdown",
+        "move_speed_x", "move_speed_y", "move_speed_z", "heating", "filament", "filament_temperature",
+        "filament_load_length", "filament_purge_length", "filament_unload_length", "filament_fast_speed",
+        "filament_slow_speed", "temperature_step", "reboot", "shutdown",
     },
     "logging": {"level"},
 }
@@ -323,10 +334,13 @@ def _apply(cfg: Config, parser) -> None:
         sec, n = parser["menu"], cfg.menu
         n.timeout = sec.getfloat("timeout", n.timeout)
         n.temperature_step = sec.getint("temperature_step", n.temperature_step)
-        for key in ("move_speed_x", "move_speed_y", "move_speed_z"):
+        for key in ("move_speed_x", "move_speed_y", "move_speed_z", "filament_temperature",
+                    "filament_fast_speed", "filament_slow_speed"):
             setattr(n, key, sec.getint(key, getattr(n, key)))
-        for key in ("enabled", "pause", "cancel", "firmware_restart", "homing", "move", "heating", "reboot",
-                    "shutdown"):
+        for key in ("filament_load_length", "filament_purge_length", "filament_unload_length"):
+            setattr(n, key, sec.getfloat(key, getattr(n, key)))
+        for key in ("enabled", "pause", "cancel", "firmware_restart", "homing", "move", "heating", "filament",
+                    "reboot", "shutdown"):
             setattr(n, key, sec.getboolean(key, getattr(n, key)))
 
     preheats = []
@@ -396,6 +410,13 @@ def validate(cfg: Config) -> None:
     for axis in "xyz":
         if getattr(cfg.menu, "move_speed_" + axis) <= 0:
             raise ConfigError("[menu] move_speed_%s muss > 0 sein (mm/min)" % axis)
+    menu = cfg.menu
+    if menu.filament_temperature < 0 or menu.filament_purge_length < 0:
+        raise ConfigError("[menu] filament_temperature/filament_purge_length duerfen nicht negativ sein")
+    if menu.filament_load_length <= 0 or menu.filament_unload_length <= 0:
+        raise ConfigError("[menu] filament_load_length/filament_unload_length muessen > 0 sein")
+    if menu.filament_fast_speed <= 0 or menu.filament_slow_speed <= 0:
+        raise ConfigError("[menu] filament_fast_speed/filament_slow_speed muessen > 0 sein (mm/min)")
     if not 1 <= cfg.menu.temperature_step <= 50:
         raise ConfigError("[menu] temperature_step muss zwischen 1 und 50 liegen")
     if cfg.serial.baudrate <= 0:

@@ -102,6 +102,12 @@ Im Menü stehen außerdem:
   3000/3000/200) stellt man genauso ein. Nur ohne Druck und nur für Achsen nach
   dem Homing; die Grenzen kommen aus Klipper, Z nie unter 0. „Motoren aus“ sendet
   `M84`.
+* **Filament ›** – Laden, Entladen und die Temperatur dafür (Start: erste
+  Vorheiz-Vorgabe, nicht unter `min_extrude_temp`). Es wird aufgeheizt und
+  gewartet; gibt es in Klipper `LOAD_FILAMENT`/`UNLOAD_FILAMENT`, laufen danach
+  diese Makros, sonst ein eingebauter Ablauf für Direktantrieb: Laden 50 mm
+  schnell + 30 mm langsam, Entladen 5 mm vor und 60 mm zurück. Längen und Tempo
+  in `[menu] filament_*`, für Bowden die Längen entsprechend erhöhen. Nur ohne Druck.
 * **Heizen ›** – Vorgaben wie „PLA 200°/60°“ und „Abkühlen“ (nur ohne Druck)
   sowie die Zieltemperatur von Hotend und Bett. Die stellt man mit dem Drehgeber
   in Schritten von 5° ein und übernimmt sie per Klick. Das geht auch während
