@@ -130,6 +130,11 @@ static void bounce(int pin, int value) {  // prellender Kontakt
 static void detent(int first, int second) {
   bounce(first, 0); bounce(second, 0); bounce(first, 1); bounce(second, 1);
 }
+// Drehgeber mit 2 Flanken pro Rastung: rastet bei HIGH/HIGH und LOW/LOW
+static void halfDetent(int first, int second) {
+  int value = pins[first] && pins[second] ? 0 : 1;
+  bounce(first, value); bounce(second, value);
+}
 static void spin(unsigned long ms) {
   unsigned long end = millis() + ms;
   while ((long)(millis() - end) < 0) loop();
@@ -178,6 +183,8 @@ int main() {
       if (cmd == "SHOW") show();
       else if (cmd == "CW") { detent(ENCODER_CLK, ENCODER_DT); spin(40); }
       else if (cmd == "CCW") { detent(ENCODER_DT, ENCODER_CLK); spin(40); }
+      else if (cmd == "HCW") { halfDetent(ENCODER_CLK, ENCODER_DT); spin(40); }
+      else if (cmd == "HCCW") { halfDetent(ENCODER_DT, ENCODER_CLK); spin(40); }
       else if (cmd == "CLICK") { pins[ENCODER_SW] = 0; spin(100); pins[ENCODER_SW] = 1; spin(60); }
       else if (cmd == "LONG") { pins[ENCODER_SW] = 0; spin(1000); pins[ENCODER_SW] = 1; spin(60); }
       else if (cmd == "BOUNCE") { pins[ENCODER_SW] = 0; spin(5); pins[ENCODER_SW] = 1; spin(60); }

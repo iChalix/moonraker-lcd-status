@@ -28,8 +28,10 @@
 #define ENCODER_CLK 2
 #define ENCODER_DT 3
 #define ENCODER_SW 4
-// Flanken pro Rastung: 4 (KY-040 und die meisten) oder 2
-#define ENCODER_STEPS 4
+// Flanken pro Rastung: 0 = selbst erkennen, sonst fest 4 oder 2.
+// Erkennung: Bleibt der Drehgeber in der Mittelstellung (CLK und DT LOW)
+// stehen, hat er 2 Flanken pro Rastung (manche HW-040/KY-040), sonst 4.
+#define ENCODER_STEPS 0
 
 #define SERIAL_BAUD 57600
 
@@ -38,12 +40,13 @@
 
 // ---------------------------------------------------------------- Konstanten
 
-#define SKETCH_VERSION "1.0.0"
+#define SKETCH_VERSION "1.0.1"
 #define PROTOCOL_VERSION "1"
 
 #define BUTTON_DEBOUNCE 30UL
 #define BUTTON_LONG 800UL
 #define ROTATE_REPORT 30UL
+#define ENCODER_REST 500UL  // so lange in der Mittelstellung = 2 Flanken pro Rastung
 #define LCD_RETRY 2000UL
 
 // PCF8574: P0=RS P1=RW P2=E P3=Beleuchtung P4..P7=D4..D7
@@ -329,6 +332,16 @@ void serialStep() {
 volatile int8_t encoderDetents = 0;
 volatile int8_t encoderAccu = 0;
 volatile uint8_t encoderState = 3;
+volatile bool encoderHalf = ENCODER_STEPS == 2;  // 2 Flanken pro Rastung
+volatile unsigned long encoderChanged = 0;
+
+// Bis zur Raststellung aufgelaufene Flanken als Rastung werten
+void encoderCount() {
+  int8_t need = encoderHalf ? 1 : 2;
+  if (encoderAccu >= need) encoderDetents++;
+  else if (encoderAccu <= -need) encoderDetents--;
+  encoderAccu = 0;
+}
 
 // Zustandstabelle: Kontaktprellen hebt sich auf, gezaehlt wird erst in der
 // Raststellung. Verlorene Flanken koennen sich so nicht aufsummieren.
@@ -338,15 +351,28 @@ void encoderISR() {
   if (now == encoderState) return;
   encoderAccu += table[(encoderState << 2) | now];
   encoderState = now;
-  if (now == 3 || (ENCODER_STEPS == 2 && now == 0)) {
-    if (encoderAccu >= ENCODER_STEPS / 2) encoderDetents++;
-    else if (encoderAccu <= -ENCODER_STEPS / 2) encoderDetents--;
-    encoderAccu = 0;
+  encoderChanged = millis();
+  if (now == 3 || (encoderHalf && now == 0)) encoderCount();
+}
+
+// Ein Drehgeber mit 4 Flanken rastet nur bei CLK und DT HIGH ein. Ruht er
+// laenger mit beiden LOW, rastet er auch dort: 2 Flanken pro Rastung. Gilt bis
+// zum naechsten Reset (der Dienst setzt den Nano beim Oeffnen des Ports zurueck).
+void encoderDetect() {
+#if ENCODER_STEPS == 0
+  if (encoderHalf) return;
+  noInterrupts();
+  if (encoderState == 0 && millis() - encoderChanged >= ENCODER_REST) {
+    encoderHalf = true;
+    encoderCount();  // die Rastung, die bis hierher gefuehrt hat
   }
+  interrupts();
+#endif
 }
 
 void encoderStep() {
   static unsigned long last = 0;
+  encoderDetect();
   if (millis() - last < ROTATE_REPORT) return;
   noInterrupts();
   int8_t detents = encoderDetents;
@@ -390,6 +416,7 @@ void setup() {
   pinMode(ENCODER_DT, INPUT_PULLUP);
   pinMode(ENCODER_SW, INPUT_PULLUP);
   encoderState = (digitalRead(ENCODER_CLK) << 1) | digitalRead(ENCODER_DT);
+  encoderChanged = millis();
   attachInterrupt(digitalPinToInterrupt(ENCODER_CLK), encoderISR, CHANGE);
   attachInterrupt(digitalPinToInterrupt(ENCODER_DT), encoderISR, CHANGE);
 

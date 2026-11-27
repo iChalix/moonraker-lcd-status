@@ -13,6 +13,12 @@ Release einen datierten Abschnitt.
 
 ## [Unreleased]
 
+### Behoben
+
+* Drehgeber mit 2 Flanken pro Rastung (z. B. manche HW-040) brauchten zwei
+  Rastungen pro Schritt. Der Sketch (1.0.1) erkennt jetzt selbst, ob der
+  Drehgeber 2 oder 4 Flanken pro Rastung hat. Dafür den Sketch neu flashen.
+
 ## [1.0.0] - 2026-11-24
 
 Erste Version.

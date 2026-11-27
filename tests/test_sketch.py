@@ -144,6 +144,30 @@ class SketchTest(unittest.TestCase):
             total += protocol.parse_rotation(message)
         self.assertEqual(total, 25)
 
+    def rotations(self, timeout=0.8):
+        found = []
+        while True:
+            message = self.receive(timeout)
+            if message is None:
+                return found
+            found.append(protocol.parse_rotation(message))
+
+    def test_two_steps_per_detent_are_detected(self):
+        # erste Rastung endet in der Mittelstellung, zaehlt nach der Erkennung
+        self.arduino.command("HCW")
+        self.assertEqual(protocol.parse_rotation(self.receive()), 1)
+        for command, expected in (("HCW", 1), ("HCW", 1), ("HCCW", -1), ("HCCW", -1), ("HCCW", -1)):
+            self.arduino.command(command)
+            self.assertEqual(protocol.parse_rotation(self.receive(0.3)), expected, command)
+        for _ in range(12):
+            self.arduino.command("HCW")
+        self.assertEqual(sum(self.rotations()), 12)
+
+    def test_four_steps_per_detent_stay_four(self):
+        for _ in range(3):
+            self.arduino.command("CW")
+            self.assertEqual(self.rotations(), [1])  # auch nach einer Pause keine Umstellung
+
     def test_button(self):
         self.arduino.command("CLICK")
         self.assertEqual(self.receive(), b"S")

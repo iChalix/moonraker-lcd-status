@@ -26,7 +26,7 @@ Menü bedienen.
 |---|---|---|
 | LCD (HD44780 mit I2C-Adapter PCF8574) | GND / VCC | GND / 5V |
 | | SDA / SCL | A4 / A5 |
-| Drehgeber (z. B. KY-040), optional | GND / + | GND / 5V |
+| Drehgeber (z. B. KY-040, HW-040), optional | GND / + | GND / 5V |
 | | CLK / DT | D2 / D3 |
 | | SW | D4 |
 
@@ -151,7 +151,7 @@ Projektordner ausführen.
 | Log: „Arduino findet kein LCD“ | Verdrahtung SDA→A4, SCL→A5, GND, 5V |
 | Log: „keine Kennung“ | falscher Port oder anderer Sketch auf dem Arduino |
 | Drehrichtung verkehrt | `[encoder] reverse = yes` |
-| Eine Rastung springt zwei Seiten oder keine | `ENCODER_STEPS` im Sketch auf 2 bzw. 4 |
+| Eine Rastung springt zwei Seiten oder keine | Der Sketch erkennt 2 oder 4 Flanken pro Rastung selbst (ab Sketch 1.0.1). Sonst `ENCODER_STEPS` im Sketch fest auf 2 bzw. 4 |
 | Falsche Zeichen statt ä, ö, °  | `[display] charset = a02` oder `ascii` |
 | „kein Moonraker“ | `[moonraker] url`; bei anderem Rechner `trusted_clients` oder `api_key` |
 
