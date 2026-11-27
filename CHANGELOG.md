@@ -13,6 +13,8 @@ Release einen datierten Abschnitt.
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-11-27
+
 ### Neu
 
 * Untermenü **Bed Mesh**: Kalibrieren (mit Rückfrage, bei Bedarf vorher `G28`),
