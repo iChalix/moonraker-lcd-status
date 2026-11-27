@@ -109,6 +109,11 @@ Im Menü stehen außerdem:
   Rückfrage) schreibt ihn mit `Z_OFFSET_APPLY_PROBE` – oder
   `Z_OFFSET_APPLY_ENDSTOP`, wenn der Z-Endstop keine Sonde ist – und
   `SAVE_CONFIG` fest; Klipper startet dabei neu.
+* **Bed Mesh ›** – nur ohne Druck und nur mit `[bed_mesh]` in Klipper:
+  „Kalibrieren“ (mit Rückfrage, vorher `G28`, falls nicht alle Achsen
+  referenziert sind), gespeicherte Profile laden (das aktive ist mit `*`
+  markiert), „Mesh löschen“ und „Speichern“ (mit Rückfrage:
+  `BED_MESH_PROFILE SAVE=…` + `SAVE_CONFIG`, Klipper startet neu).
 * **Lüfter ›** – Bauteillüfter und jeder `[fan_generic]` in 10-%-Schritten
   (Klick, drehen, Klick), auch während des Drucks. Automatische Lüfter (Hotend,
   Elektronik) regelt Klipper selbst, sie erscheinen nicht.

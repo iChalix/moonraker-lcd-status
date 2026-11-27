@@ -32,6 +32,7 @@ def base_objects() -> dict:
                        "homing_origin": [0.0, 0.0, 0.0, 0.0]},
         "fan": {"speed": 0.0},
         "fan_generic abluft": {"speed": 0.0},
+        "bed_mesh": {"profile_name": "", "profiles": {"default": {}, "pla_60": {}}},
         "extruder": {"temperature": 24.1, "target": 0.0},
         "heater_bed": {"temperature": 22.4, "target": 0.0},
         "heater_generic chamber": {"temperature": 25.0, "target": 0.0},
@@ -122,6 +123,14 @@ class SimulatedClient:
                 self.printer.update_objects({"fan": {"speed": value / 255.0}})
             elif words[:1] == ["M107"]:
                 self.printer.update_objects({"fan": {"speed": 0.0}})
+            elif words[:1] == ["BED_MESH_CALIBRATE"]:
+                profiles = dict(self.printer.get("bed_mesh", "profiles", {}) or {})
+                profiles["default"] = {}
+                self.printer.update_objects({"bed_mesh": {"profile_name": "default", "profiles": profiles}})
+            elif words[:1] == ["BED_MESH_PROFILE"] and words[1].startswith("LOAD="):
+                self.printer.update_objects({"bed_mesh": {"profile_name": words[1][len("LOAD="):]}})
+            elif words[:1] == ["BED_MESH_CLEAR"]:
+                self.printer.update_objects({"bed_mesh": {"profile_name": ""}})
             elif words[:1] == ["SET_GCODE_OFFSET"]:
                 params = dict(word.split("=", 1) for word in words[1:])
                 origin = list(self.printer.get("gcode_move", "homing_origin", [0.0] * 4))

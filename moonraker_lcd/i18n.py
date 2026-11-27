@@ -26,6 +26,7 @@ TEXTS = {
         "motors_off": "Motoren aus", "step": "Schritt", "home_first": "Erst Homing nötig",
         "load": "Laden", "unload": "Entladen", "temperature": "Temperatur", "part_fan": "Bauteillüfter",
         "z_offset": "Z-Offset", "reset": "Zurücksetzen", "save": "Speichern",
+        "bed_mesh": "Bed Mesh", "calibrate": "Kalibrieren", "load_profile": "Laden", "mesh_clear": "Mesh löschen",
     },
     "en": {
         "standby": "ready", "busy": "busy", "printing": "printing", "paused": "paused",
@@ -50,6 +51,7 @@ TEXTS = {
         "motors_off": "Motors off", "step": "Step", "home_first": "Home first",
         "load": "Load", "unload": "Unload", "temperature": "Temperature", "part_fan": "Part fan",
         "z_offset": "Z offset", "reset": "Reset", "save": "Save",
+        "bed_mesh": "Bed mesh", "calibrate": "Calibrate", "load_profile": "Load", "mesh_clear": "Clear mesh",
     },
 }
 

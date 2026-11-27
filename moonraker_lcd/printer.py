@@ -20,6 +20,7 @@ BASE_OBJECTS = {
     "toolhead": ["extruder", "homed_axes", "position", "axis_minimum", "axis_maximum"],
     "gcode_move": ["gcode_position", "speed_factor", "extrude_factor", "homing_origin"],
     "fan": ["speed"],
+    "bed_mesh": ["profile_name", "profiles"],
     # nur fuer max_temp der Heizer (Grenze beim Einstellen im Menue)
     "configfile": ["settings"],
 }
@@ -412,6 +413,20 @@ class Printer:
 
     def axis_limits(self, axis: str) -> tuple:
         return self._axis_value("axis_minimum", axis, 0.0), self._axis_value("axis_maximum", axis, 0.0)
+
+    @property
+    def has_bed_mesh(self) -> bool:
+        return "bed_mesh" in self.objects
+
+    @property
+    def mesh_profiles(self) -> list:
+        """Gespeicherte Bed-Mesh-Profile."""
+        return sorted(self.get("bed_mesh", "profiles", {}) or {})
+
+    @property
+    def mesh_active(self) -> str:
+        """Name des geladenen Meshs, leer ohne Mesh."""
+        return str(self.get("bed_mesh", "profile_name", "") or "")
 
     @property
     def z_offset(self) -> float:

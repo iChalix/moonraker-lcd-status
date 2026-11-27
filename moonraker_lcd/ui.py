@@ -270,6 +270,8 @@ class UI:
                     "Z_OFFSET_APPLY_PROBE" if probe else "Z_OFFSET_APPLY_ENDSTOP")),
             ]
             return [action for action in candidates if self._allowed(action)]
+        if menu_id == "mesh":
+            return [action for action in self._mesh_actions() if self._allowed(action)]
         if menu_id == "fans":
             candidates = [Action(BACK, self._t("back"))] + [
                 Action("fan", name, payload=obj, when="ready") for obj, name, _ in self._printer.fans
@@ -306,6 +308,8 @@ class UI:
             candidates.append(Action("submenu", t("heat"), payload="heat", when="ready"))
         if menu.z_offset:
             candidates.append(Action("submenu", t("z_offset"), payload="zoffset", when="ready"))
+        if menu.bed_mesh and self._printer.has_bed_mesh:
+            candidates.append(Action("submenu", t("bed_mesh"), payload="mesh", when="idle"))
         if menu.fans and self._printer.fans:
             candidates.append(Action("submenu", t("fan"), payload="fans", when="ready"))
         if menu.filament and self._printer.extruder:
@@ -450,6 +454,25 @@ class UI:
         script = "SAVE_GCODE_STATE NAME=lcd_move\nG91\nG1 %s%s F%d\nRESTORE_GCODE_STATE NAME=lcd_move" % (
             axis.upper(), _number(delta), speed)
         self._on_action(Action("gcode", action.label, payload=script, when="idle"))
+
+    def _mesh_actions(self) -> list:
+        """Kalibrieren, gespeicherte Profile laden, Mesh loeschen, speichern."""
+        t, printer = self._t, self._printer
+        homed = all(printer.homed(axis) for axis in "xyz")
+        calibrate = "BED_MESH_CALIBRATE" if homed else "G28\nBED_MESH_CALIBRATE"
+        actions = [
+            Action(BACK, t("back")),
+            Action("gcode", t("calibrate"), payload=calibrate, confirm=True, when="idle"),
+        ]
+        active = printer.mesh_active
+        for name in printer.mesh_profiles:
+            label = "%s: %s%s" % (t("load_profile"), name, " *" if name == active else "")
+            actions.append(Action("gcode", label, payload="BED_MESH_PROFILE LOAD=%s" % name, when="idle"))
+        if active:
+            actions.append(Action("gcode", t("mesh_clear"), payload="BED_MESH_CLEAR", when="idle"))
+            actions.append(Action("gcode", t("save"), confirm=True, when="idle",
+                                  payload="BED_MESH_PROFILE SAVE=%s\nSAVE_CONFIG" % active))
+        return actions
 
     def _value_edits(self) -> tuple:
         return (self._jog, self._step_edit, self._speed_edit, self._ftemp_edit, self._fan_edit,

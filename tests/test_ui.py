@@ -146,8 +146,8 @@ class MenuTest(unittest.TestCase):
     def test_entries_depend_on_the_state(self):
         ui, _ = make_ui(make_printer())
         self.assertEqual(self.labels(ui),
-                         ["Zurück", "Homing", "Achsen bewegen", "Heizen", "Z-Offset", "Lüfter", "Filament",
-                          "Anzeige auffrischen"])
+                         ["Zurück", "Homing", "Achsen bewegen", "Heizen", "Z-Offset", "Bed Mesh", "Lüfter",
+                          "Filament", "Anzeige auffrischen"])
         ui, _ = make_ui(printing_printer())
         self.assertEqual(self.labels(ui),
                          ["Zurück", "Pause", "Abbrechen", "Heizen", "Z-Offset", "Lüfter", "Anzeige auffrischen"])
@@ -318,7 +318,7 @@ class HomingHeatingTest(unittest.TestCase):
     def test_submenus_can_be_switched_off(self):
         config = Config()
         config.menu.homing = config.menu.heating = config.menu.move = config.menu.filament = False
-        config.menu.fans = config.menu.z_offset = False
+        config.menu.fans = config.menu.z_offset = config.menu.bed_mesh = False
         ui, _ = make_ui(make_printer(config), config)
         self.assertEqual([a.label for a in ui.actions()], ["Zurück", "Anzeige auffrischen"])
 
@@ -806,6 +806,62 @@ class ZOffsetTest(unittest.TestCase):
         self.select_here(ui, "Z-Offset")
         ui.rotate(2, 1.0)
         self.assertEqual(ui.render(1.0, WALL), ["Z-Offset  +0.000", "Ziel   +0.020 mm"])
+
+
+class BedMeshTest(unittest.TestCase):
+    select = MenuTest.select
+    select_here = HomingHeatingTest.select_here
+
+    def labels(self, ui):
+        return [action.label for action in ui.actions("mesh")]
+
+    def test_submenu_without_active_mesh(self):
+        ui, _ = make_ui(make_printer())
+        self.assertEqual(self.labels(ui), ["Zurück", "Kalibrieren", "Laden: default", "Laden: pla_60"])
+
+    def test_active_mesh_is_marked_and_can_be_cleared_or_saved(self):
+        printer = make_printer(objects={"bed_mesh": {"profile_name": "pla_60"}})
+        ui, calls = make_ui(printer)
+        self.assertEqual(self.labels(ui), ["Zurück", "Kalibrieren", "Laden: default", "Laden: pla_60 *",
+                                           "Mesh löschen", "Speichern"])
+        self.select(ui, "Bed Mesh")
+        self.select_here(ui, "Mesh löschen")
+        self.assertEqual(calls[0].payload, "BED_MESH_CLEAR")
+        self.select(ui, "Bed Mesh")
+        self.select_here(ui, "Speichern")
+        self.assertIn(">Nein", ui.render(1.0, WALL)[3])
+        ui.rotate(1, 1.0)
+        ui.click(1.0)
+        self.assertEqual(calls[1].payload, "BED_MESH_PROFILE SAVE=pla_60\nSAVE_CONFIG")
+
+    def test_load_profile(self):
+        ui, calls = make_ui(make_printer())
+        self.select(ui, "Bed Mesh")
+        self.select_here(ui, "Laden: pla_60")
+        self.assertEqual(calls[0].payload, "BED_MESH_PROFILE LOAD=pla_60")
+
+    def test_calibrate_asks_and_homes_first_if_needed(self):
+        for objects, payload in (({}, "G28\nBED_MESH_CALIBRATE"),
+                                 ({"toolhead": {"homed_axes": "xyz"}}, "BED_MESH_CALIBRATE")):
+            ui, calls = make_ui(make_printer(objects=objects))
+            self.select(ui, "Bed Mesh")
+            self.select_here(ui, "Kalibrieren")
+            ui.click(1.0)  # "Nein" ist vorausgewaehlt
+            self.assertEqual(calls, [])
+            self.select(ui, "Bed Mesh")
+            self.select_here(ui, "Kalibrieren")
+            ui.rotate(1, 1.0)
+            ui.click(1.0)
+            self.assertEqual(calls[0].payload, payload)
+
+    def test_only_with_bed_mesh_and_not_while_printing(self):
+        printer = make_printer()
+        del printer.objects["bed_mesh"]
+        ui, _ = make_ui(printer)
+        self.assertNotIn("Bed Mesh", [a.label for a in ui.actions()])
+        ui, _ = make_ui(printing_printer())
+        self.assertNotIn("Bed Mesh", [a.label for a in ui.actions()])
+        self.assertEqual(self.labels(ui), ["Zurück"])
 
 
 class BacklightTest(unittest.TestCase):

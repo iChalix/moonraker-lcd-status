@@ -13,6 +13,13 @@ Release einen datierten Abschnitt.
 
 ## [Unreleased]
 
+### Neu
+
+* Untermenü **Bed Mesh**: Kalibrieren (mit Rückfrage, bei Bedarf vorher `G28`),
+  gespeicherte Profile laden, Mesh löschen und Speichern mit Rückfrage
+  (`BED_MESH_PROFILE SAVE` + `SAVE_CONFIG`). Nur ohne Druck und nur mit
+  `[bed_mesh]`; abschalten mit `[menu] bed_mesh = no`.
+
 ## [1.5.0] - 2026-11-27
 
 ### Neu
