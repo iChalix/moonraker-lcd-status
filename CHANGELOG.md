@@ -13,6 +13,8 @@ Release einen datierten Abschnitt.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-27
+
 ### Neu
 
 * Untermenü **Achsen bewegen**: Achse wählen, Zielposition drehen, Klick fährt
