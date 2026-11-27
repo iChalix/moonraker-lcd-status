@@ -89,13 +89,19 @@ richtige Arduino gemeldet hat. Andere Programme prüfen das nicht.
 
 | Eingabe | Auf den Seiten | Im Menü |
 |---|---|---|
-| Drehen | nächste/vorige Seite | Auswahl bewegen, Temperatur ändern |
-| Drücken | Menü öffnen | auswählen, Temperatur übernehmen |
-| Lang drücken | zur ersten Seite | eine Ebene zurück |
+| Drehen | nächste/vorige Seite | Auswahl bewegen, Wert ändern |
+| Drücken | Menü öffnen | auswählen, Wert übernehmen |
+| Lang drücken | zur ersten Seite | eine Ebene zurück, Wert verwerfen |
 
 Im Menü stehen außerdem:
 
 * **Homing ›** – alle Achsen, X und Y zusammen, X, Y oder Z (`G28`), nur ohne Druck.
+* **Achsen bewegen ›** – wie bei den Temperaturen: Achse auswählen, Klick,
+  Zielposition drehen, Klick fährt hin und führt zurück zur Auswahl. „Schritt“
+  (0,1 / 1 / 10 mm) und „Tempo X/Y/Z“ (mm/min, Standard aus `move_speed_x/_y/_z`:
+  3000/3000/200) stellt man genauso ein. Nur ohne Druck und nur für Achsen nach
+  dem Homing; die Grenzen kommen aus Klipper, Z nie unter 0. „Motoren aus“ sendet
+  `M84`.
 * **Heizen ›** – Vorgaben wie „PLA 200°/60°“ und „Abkühlen“ (nur ohne Druck)
   sowie die Zieltemperatur von Hotend und Bett. Die stellt man mit dem Drehgeber
   in Schritten von 5° ein und übernimmt sie per Klick. Das geht auch während

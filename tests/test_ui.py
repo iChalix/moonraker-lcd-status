@@ -145,7 +145,7 @@ class MenuTest(unittest.TestCase):
 
     def test_entries_depend_on_the_state(self):
         ui, _ = make_ui(make_printer())
-        self.assertEqual(self.labels(ui), ["Zurück", "Homing", "Heizen", "Anzeige auffrischen"])
+        self.assertEqual(self.labels(ui), ["Zurück", "Homing", "Achsen bewegen", "Heizen", "Anzeige auffrischen"])
         ui, _ = make_ui(printing_printer())
         self.assertEqual(self.labels(ui), ["Zurück", "Pause", "Abbrechen", "Heizen", "Anzeige auffrischen"])
         printer = printing_printer()
@@ -297,7 +297,8 @@ class HomingHeatingTest(unittest.TestCase):
         self.assertEqual(calls[1].payload, "G28 X Y")
 
     def select_here(self, ui, label, now=1.0):
-        """Im schon offenen (Unter-)Menue auswaehlen."""
+        """Im schon offenen (Unter-)Menue auswaehlen, von oben gesucht."""
+        ui.rotate(-50, now)
         for _ in range(20):
             lines = ui.render(now, WALL)
             if any(line.startswith(">" + label) for line in lines):
@@ -313,7 +314,7 @@ class HomingHeatingTest(unittest.TestCase):
 
     def test_submenus_can_be_switched_off(self):
         config = Config()
-        config.menu.homing = config.menu.heating = False
+        config.menu.homing = config.menu.heating = config.menu.move = False
         ui, _ = make_ui(make_printer(config), config)
         self.assertEqual([a.label for a in ui.actions()], ["Zurück", "Anzeige auffrischen"])
 
@@ -416,6 +417,175 @@ class HomingHeatingTest(unittest.TestCase):
         self.select(ui, "Heizen")
         self.select_here(ui, "Hotend")
         self.assertEqual(ui.render(1.0, WALL), ["Hotend       24°", "Ziel        200°"])
+
+
+HOMED = {"toolhead": {"homed_axes": "xyz", "position": [100.0, 150.0, 1.5, 0.0],
+                      "axis_minimum": [0.0, -5.0, -2.0, 0.0], "axis_maximum": [300.0, 300.0, 280.0, 0.0]}}
+
+
+def jog(axis, delta, speed):
+    return ("SAVE_GCODE_STATE NAME=lcd_move\nG91\nG1 %s%s F%d\nRESTORE_GCODE_STATE NAME=lcd_move"
+            % (axis, delta, speed))
+
+
+class MoveTest(unittest.TestCase):
+    select = MenuTest.select
+    select_here = HomingHeatingTest.select_here
+
+    def open_axis(self, label, printer=None, config=None):
+        ui, calls = make_ui(printer or make_printer(config, HOMED), config)
+        self.select(ui, "Achsen bewegen")
+        self.select_here(ui, label)
+        return ui, calls
+
+    def test_submenu(self):
+        ui, _ = make_ui(make_printer(objects=HOMED))
+        self.select(ui, "Achsen bewegen")
+        self.assertEqual([line.strip() for line in ui.render(1.0, WALL)],
+                         [">Zurück", "X-Achse: 100.0", "Y-Achse: 150.0", "Z-Achse: 1.5"])
+        self.assertEqual([a.label for a in ui.actions("move")][4:],
+                         ["Schritt", "Tempo X", "Tempo Y", "Tempo Z", "Motoren aus"])
+
+    def test_unhomed_axes_need_homing_first(self):
+        ui, calls = make_ui(make_printer())
+        self.select(ui, "Achsen bewegen")
+        self.assertIn(" X-Achse: ?", [line.rstrip() for line in ui.render(1.0, WALL)])
+        self.select_here(ui, "X-Achse")
+        self.assertIn("Erst Homing nötig", "".join(ui.render(1.0, WALL)))
+        self.assertEqual(calls, [])
+
+    def set_step(self, ui, steps):
+        """Schrittweite: auswaehlen, drehen, Klick."""
+        self.select_here(ui, "Schritt")
+        ui.rotate(steps, 1.0)
+        ui.click(1.0)
+
+    def test_select_edit_send(self):
+        ui, calls = self.open_axis("X-Achse")
+        self.assertEqual(ui.render(1.0, WALL), [
+            "X-Achse    Schritt 1", "Ist         100.0 mm", "Ziel        100.0 mm", "     Klick = OK     "])
+        ui.rotate(3, 1.0)
+        self.assertEqual(ui.render(1.0, WALL)[2], "Ziel        103.0 mm")
+        self.assertEqual(calls, [])  # Drehen bewegt noch nichts
+        ui.click(1.0)
+        self.assertEqual(calls[-1].payload, jog("X", "3", 3000))
+        # wieder in der Auswahl, Cursor auf der Achse
+        self.assertTrue(any(line.startswith(">X-Achse") for line in ui.render(1.0, WALL)))
+
+    def test_step_size(self):
+        ui, calls = self.open_axis("X-Achse")
+        ui.click(1.0)  # ohne Aenderung: nichts senden
+        self.assertEqual(calls, [])
+        self.set_step(ui, -1)
+        self.assertIn("Schritt: 0.1 mm", [line[1:].rstrip() for line in ui.render(1.0, WALL)])
+        self.select_here(ui, "X-Achse")
+        ui.rotate(-2, 1.0)
+        ui.click(1.0)
+        self.assertEqual(calls[-1].payload, jog("X", "-0.2", 3000))
+        self.set_step(ui, 5)  # oben begrenzt: 10 mm
+        self.assertIn("Schritt: 10 mm", [line[1:].rstrip() for line in ui.render(1.0, WALL)])
+
+    def test_step_edit_screen_and_cancel(self):
+        ui, _ = make_ui(make_printer(objects=HOMED))
+        self.select(ui, "Achsen bewegen")
+        self.select_here(ui, "Schritt")
+        self.assertEqual(ui.render(1.0, WALL)[1], "Schritt         1 mm")
+        ui.rotate(1, 1.0)
+        ui.long_press(1.0)  # verwerfen
+        self.assertIn("Schritt: 1 mm", [line[1:].rstrip() for line in ui.render(1.0, WALL)])
+
+    def test_limits(self):
+        ui, calls = self.open_axis("X-Achse")
+        ui.long_press(1.0)
+        self.set_step(ui, 1)  # 10 mm
+        self.select_here(ui, "X-Achse")
+        ui.rotate(50, 1.0)
+        self.assertEqual(ui.render(1.0, WALL)[2], "Ziel        300.0 mm")
+        ui.click(1.0)
+        self.assertEqual(calls[-1].payload, jog("X", "200", 3000))
+
+    def test_z_never_below_zero(self):
+        ui, calls = self.open_axis("Z-Achse")
+        ui.rotate(-5, 1.0)
+        self.assertEqual(ui.render(1.0, WALL)[2], "Ziel          0.0 mm")
+        ui.click(1.0)
+        self.assertEqual(calls[-1].payload, jog("Z", "-1.5", 200))
+
+    def test_own_speeds(self):
+        config = Config()
+        config.menu.move_speed_y = 4321
+        ui, calls = self.open_axis("Y-Achse", config=config)
+        ui.rotate(1, 1.0)
+        ui.click(1.0)
+        self.assertEqual(calls[-1].payload, jog("Y", "1", 4321))
+
+    def test_speed_in_the_menu(self):
+        ui, calls = make_ui(make_printer(objects=HOMED))
+        self.select(ui, "Achsen bewegen")
+        self.select_here(ui, "Tempo Z")
+        self.assertEqual(ui.render(1.0, WALL)[1], "Tempo Z   200 mm/min")
+        ui.rotate(2, 1.0)  # 200 -> 300 -> 500
+        ui.click(1.0)
+        self.assertIn("Tempo Z: 500", [line[1:].rstrip() for line in ui.render(1.0, WALL)])
+        self.select_here(ui, "Tempo X")
+        ui.rotate(-1, 1.0)
+        ui.long_press(1.0)  # verworfen
+        self.assertIn("Tempo X: 3000", [line[1:].rstrip() for line in ui.render(1.0, WALL)])
+        self.select_here(ui, "Z-Achse")
+        ui.rotate(1, 1.0)
+        ui.click(1.0)
+        self.assertEqual(calls[-1].payload, jog("Z", "1", 500))
+
+    def test_speed_limits_and_own_value(self):
+        config = Config()
+        config.menu.move_speed_x = 2500  # nicht in der Liste
+        ui, _ = make_ui(make_printer(config, HOMED), config)
+        self.select(ui, "Achsen bewegen")
+        self.select_here(ui, "Tempo X")
+        ui.rotate(1, 1.0)
+        self.assertEqual(ui.render(1.0, WALL)[1], "Tempo X  3000 mm/min")
+        ui.rotate(-1, 1.0)
+        self.assertEqual(ui.render(1.0, WALL)[1], "Tempo X  2500 mm/min")
+        ui.rotate(-99, 1.0)
+        self.assertEqual(ui.render(1.0, WALL)[1], "Tempo X    50 mm/min")
+        ui.rotate(99, 1.0)
+        self.assertEqual(ui.render(1.0, WALL)[1], "Tempo X 10000 mm/min")
+
+    def test_motors_off(self):
+        ui, calls = make_ui(make_printer(objects=HOMED))
+        self.select(ui, "Achsen bewegen")
+        self.select_here(ui, "Motoren aus")
+        self.assertEqual(calls[0].payload, "M84")
+
+    def test_not_while_printing(self):
+        printer = printing_printer()
+        printer.update_objects(HOMED)
+        ui, _ = make_ui(printer)
+        self.assertNotIn("Achsen bewegen", [a.label for a in ui.actions()])
+        self.assertEqual([a.label for a in ui.actions("move")], ["Zurück"])
+
+    def test_moving_stops_when_a_print_starts(self):
+        printer = make_printer(objects=HOMED)
+        ui, calls = self.open_axis("X-Achse", printer)
+        ui.rotate(1, 1.0)
+        printer.update_objects(copy.deepcopy(simulator.printing(0.1)))
+        ui.render(1.1, WALL)
+        ui.click(1.2)
+        self.assertEqual(calls, [])
+
+    def test_long_press_back_to_the_axes(self):
+        ui, calls = self.open_axis("Y-Achse")
+        ui.rotate(4, 1.0)
+        ui.long_press(1.0)  # verwerfen
+        self.assertTrue(any(line.startswith(">Y-Achse") for line in ui.render(1.0, WALL)))
+        self.assertEqual(calls, [])
+
+    def test_small_display(self):
+        ui, _ = make_ui(make_printer(objects=HOMED), cols=16, rows=2)
+        self.select(ui, "Achsen bewegen")
+        self.select_here(ui, "Z-Achse")
+        ui.rotate(2, 1.0)
+        self.assertEqual(ui.render(1.0, WALL), ["Z-Achse      1.5", "Ziel      3.5 mm"])
 
 
 class BacklightTest(unittest.TestCase):

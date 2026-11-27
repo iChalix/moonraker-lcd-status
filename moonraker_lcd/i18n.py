@@ -22,6 +22,8 @@ TEXTS = {
         "home": "Homing", "home_all": "Alle Achsen", "home_xy": "X- und Y-Achse", "home_x": "X-Achse", "home_y": "Y-Achse",
         "home_z": "Z-Achse", "heat": "Heizen", "cooldown": "Abkühlen", "off": "aus",
         "current": "Ist", "target": "Ziel", "edit_hint": "Klick = OK",
+        "move": "Achsen bewegen", "axis_x": "X-Achse", "axis_y": "Y-Achse", "axis_z": "Z-Achse",
+        "motors_off": "Motoren aus", "step": "Schritt", "home_first": "Erst Homing nötig",
     },
     "en": {
         "standby": "ready", "busy": "busy", "printing": "printing", "paused": "paused",
@@ -42,6 +44,8 @@ TEXTS = {
         "home": "Home", "home_all": "Home all", "home_xy": "Home XY", "home_x": "Home X", "home_y": "Home Y",
         "home_z": "Home Z", "heat": "Heat", "cooldown": "Cool down", "off": "off",
         "current": "Now", "target": "Target", "edit_hint": "Click = OK",
+        "move": "Move axes", "axis_x": "X axis", "axis_y": "Y axis", "axis_z": "Z axis",
+        "motors_off": "Motors off", "step": "Step", "home_first": "Home first",
     },
 }
 

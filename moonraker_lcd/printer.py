@@ -17,7 +17,7 @@ BASE_OBJECTS = {
     "display_status": ["progress", "message"],
     "pause_resume": ["is_paused"],
     "idle_timeout": ["state"],
-    "toolhead": ["extruder"],
+    "toolhead": ["extruder", "homed_axes", "position", "axis_minimum", "axis_maximum"],
     "gcode_move": ["gcode_position", "speed_factor", "extrude_factor"],
     "fan": ["speed"],
     # nur fuer max_temp der Heizer (Grenze beim Einstellen im Menue)
@@ -376,6 +376,26 @@ class Printer:
             if heater.object == active:
                 return heater
         return extruders[0] if extruders else None
+
+    # ----------------------------------------------------------- Achsen
+
+    def homed(self, axis: str) -> bool:
+        return axis in (self.get("toolhead", "homed_axes", "") or "").lower()
+
+    def _axis_value(self, field: str, axis: str, default: float) -> float:
+        values = self.get("toolhead", field, None)
+        index = "xyz".index(axis)
+        try:
+            return number(values[index], default)
+        except (TypeError, IndexError):
+            return default
+
+    def position(self, axis: str) -> float:
+        """Position des Werkzeugkopfs (Maschinenkoordinaten)."""
+        return self._axis_value("position", axis, 0.0)
+
+    def axis_limits(self, axis: str) -> tuple:
+        return self._axis_value("axis_minimum", axis, 0.0), self._axis_value("axis_maximum", axis, 0.0)
 
     def max_temp(self, name: str) -> float:
         """``max_temp`` aus Klippers Konfiguration, sonst 300."""

@@ -109,6 +109,11 @@ class MenuConfig:
     cancel: bool = True
     firmware_restart: bool = True
     homing: bool = True
+    #: Untermenue "Achsen bewegen" und das Tempo je Achse (mm/min, im Menue aenderbar)
+    move: bool = True
+    move_speed_x: int = 3000
+    move_speed_y: int = 3000
+    move_speed_z: int = 200
     heating: bool = True
     #: Schrittweite beim Einstellen einer Zieltemperatur (Grad je Rastung)
     temperature_step: int = 5
@@ -212,8 +217,8 @@ _SECTIONS = {
     "encoder": {"enabled", "reverse"},
     "progress": {"source", "eta"},
     "menu": {
-        "enabled", "timeout", "pause", "cancel", "firmware_restart", "homing", "heating",
-        "temperature_step", "reboot", "shutdown",
+        "enabled", "timeout", "pause", "cancel", "firmware_restart", "homing", "move",
+        "move_speed_x", "move_speed_y", "move_speed_z", "heating", "temperature_step", "reboot", "shutdown",
     },
     "logging": {"level"},
 }
@@ -318,7 +323,10 @@ def _apply(cfg: Config, parser) -> None:
         sec, n = parser["menu"], cfg.menu
         n.timeout = sec.getfloat("timeout", n.timeout)
         n.temperature_step = sec.getint("temperature_step", n.temperature_step)
-        for key in ("enabled", "pause", "cancel", "firmware_restart", "homing", "heating", "reboot", "shutdown"):
+        for key in ("move_speed_x", "move_speed_y", "move_speed_z"):
+            setattr(n, key, sec.getint(key, getattr(n, key)))
+        for key in ("enabled", "pause", "cancel", "firmware_restart", "homing", "move", "heating", "reboot",
+                    "shutdown"):
             setattr(n, key, sec.getboolean(key, getattr(n, key)))
 
     preheats = []
@@ -385,6 +393,9 @@ def validate(cfg: Config) -> None:
             raise ConfigError("[display] %s darf nicht negativ sein" % name)
     if cfg.menu.timeout <= 0:
         raise ConfigError("[menu] timeout muss > 0 sein")
+    for axis in "xyz":
+        if getattr(cfg.menu, "move_speed_" + axis) <= 0:
+            raise ConfigError("[menu] move_speed_%s muss > 0 sein (mm/min)" % axis)
     if not 1 <= cfg.menu.temperature_step <= 50:
         raise ConfigError("[menu] temperature_step muss zwischen 1 und 50 liegen")
     if cfg.serial.baudrate <= 0:

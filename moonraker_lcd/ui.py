@@ -20,13 +20,17 @@ HOMING = (
     ("home_all", "G28"), ("home_xy", "G28 X Y"), ("home_x", "G28 X"), ("home_y", "G28 Y"),
     ("home_z", "G28 Z"),
 )
+#: Schrittweiten beim Einstellen einer Achsposition (mm)
+MOVE_STEPS = (0.1, 1.0, 10.0)
+#: waehlbares Tempo beim Bewegen (mm/min); der Wert aus der Konfiguration kommt dazu
+MOVE_SPEEDS = (50, 100, 200, 300, 500, 1000, 1500, 2000, 3000, 4000, 5000, 6000, 8000, 10000)
 
 
 @dataclass(frozen=True)
 class Action:
     """Was der Dienst ausfuehren soll."""
 
-    kind: str  # rpc | gcode | power | refresh | back | submenu | edit
+    kind: str  # rpc | gcode | power | refresh | back | submenu | edit | jog | step | speed
     label: str
     method: str = ""
     payload: str = ""
@@ -39,7 +43,7 @@ def allowed(action: Action, phase: Phase) -> bool:
     when = action.when
     if when == "fault":
         return phase.fault
-    if action.kind in ("gcode", "edit") and not phase.ready:
+    if action.kind in ("gcode", "edit", "jog") and not phase.ready:
         return False
     if when == "ready":
         return phase.ready
@@ -71,6 +75,12 @@ class UI:
         self._stack = []       # (Menue, Cursor) der uebergeordneten Menues
         self._cursor = 0
         self._edit = None      # [Action, Wert] beim Einstellen einer Temperatur
+        self._jog = None       # [Action, Ist, Ziel] beim Einstellen einer Achsposition
+        self._move_step = 1    # Index in MOVE_STEPS, 1 mm
+        self._step_edit = None  # Index beim Einstellen der Schrittweite
+        menu = config.menu
+        self._speeds = {"x": menu.move_speed_x, "y": menu.move_speed_y, "z": menu.move_speed_z}
+        self._speed_edit = None  # [Achse, Tempo] beim Einstellen des Tempos
         self._question = None  # Action, die auf Ja/Nein wartet
         self._answer = False
         self._notice = None    # (Text, Ablaufzeit)
@@ -94,6 +104,15 @@ class UI:
         if self._question is not None:
             # im Uhrzeigersinn zum Ja, zurueck zum Nein
             self._answer = steps > 0
+        elif self._jog is not None:
+            self._adjust_jog(steps)
+        elif self._step_edit is not None:
+            self._step_edit = min(max(self._step_edit + steps, 0), len(MOVE_STEPS) - 1)
+        elif self._speed_edit is not None:
+            axis, speed = self._speed_edit
+            values = self._speed_values(axis)
+            index = min(max(values.index(speed) + steps, 0), len(values) - 1)
+            self._speed_edit[1] = values[index]
         elif self._edit is not None:
             step = self._config.menu.temperature_step
             top = int(self._printer.max_temp(self._edit[0].payload))
@@ -119,6 +138,16 @@ class UI:
             else:
                 self._close_menu()
             return
+        if self._jog is not None:
+            self._finish_jog(now)
+            return
+        if self._step_edit is not None:
+            self._move_step, self._step_edit = self._step_edit, None
+            return
+        if self._speed_edit is not None:
+            axis, speed = self._speed_edit
+            self._speeds[axis], self._speed_edit = speed, None
+            return
         if self._edit is not None:
             self._finish_edit(now)
             return
@@ -132,6 +161,12 @@ class UI:
             self._enter_menu(action.payload)
         elif action.kind == "edit":
             self._start_edit(action)
+        elif action.kind == "jog":
+            self._start_jog(action, now)
+        elif action.kind == "step":
+            self._step_edit = self._move_step
+        elif action.kind == "speed":
+            self._speed_edit = [action.payload, self._speeds[action.payload]]
         elif action.confirm:
             self._question, self._answer = action, False
         else:
@@ -147,6 +182,8 @@ class UI:
             self._question = None
         elif self._edit is not None:
             self._edit = None
+        elif self._jog is not None or self._step_edit is not None or self._speed_edit is not None:
+            self._jog = self._step_edit = self._speed_edit = None
         elif self._menu is not None:
             self._leave_menu()
         else:
@@ -165,6 +202,14 @@ class UI:
                 Action("gcode", self._t(key), payload=gcode, when="idle") for key, gcode in HOMING
             ]
             return [action for action in candidates if self._allowed(action)]
+        if menu_id == "move":
+            candidates = [Action(BACK, self._t("back"))] + [
+                Action("jog", self._t("axis_" + axis), payload=axis, when="idle") for axis in "xyz"
+            ] + [Action("step", self._t("step"), when="idle")] + [
+                Action("speed", "%s %s" % (self._t("speed"), axis.upper()), payload=axis, when="idle")
+                for axis in "xyz"
+            ] + [Action("gcode", self._t("motors_off"), payload="M84", when="idle")]
+            return [action for action in candidates if self._allowed(action)]
         if menu_id == "heat":
             return [action for action in self._heat_actions() if self._allowed(action)]
         t, menu = self._t, self._config.menu
@@ -182,6 +227,8 @@ class UI:
             )
         if menu.homing:
             candidates.append(Action("submenu", t("home"), payload="home", when="idle"))
+        if menu.move:
+            candidates.append(Action("submenu", t("move"), payload="move", when="idle"))
         if menu.heating and (self._printer.extruder or self._printer.bed):
             candidates.append(Action("submenu", t("heat"), payload="heat", when="ready"))
         for item in menu.items:
@@ -239,7 +286,8 @@ class UI:
         self._cursor = 0
 
     def _close_menu(self) -> None:
-        self._menu, self._menu_id, self._stack, self._edit = None, MAIN, [], None
+        self._menu, self._menu_id, self._stack = None, MAIN, []
+        self._edit = self._jog = self._step_edit = self._speed_edit = None
 
     def _enter_menu(self, menu_id: str) -> None:
         self._stack.append((self._menu_id, self._cursor))
@@ -262,6 +310,8 @@ class UI:
         Befehl, den der Benutzer nicht ausgewaehlt hat."""
         if self._edit is not None and not self._allowed(self._edit[0]):
             self._edit = None
+        if self._jog is not None and not self._allowed(self._jog[0]):
+            self._jog = None
         if self._menu is None:
             return
         selected = self._menu[self._cursor]
@@ -281,6 +331,44 @@ class UI:
             if heater.object == name:
                 return heater
         return None
+
+    def _start_jog(self, action: Action, now: float) -> None:
+        if not self._printer.homed(action.payload):
+            self.notice(self._t("home_first"), now, 2.0)
+            return
+        position = self._printer.position(action.payload)
+        self._jog = [action, position, position]
+
+    def _adjust_jog(self, steps: int) -> None:
+        """Zielposition aendern, innerhalb der Grenzen; bewegt wird erst beim Klick."""
+        action, _, target = self._jog
+        axis = action.payload
+        low, high = self._printer.axis_limits(axis)
+        if axis == "z":
+            low = max(low, 0.0)  # nie unter Z=0 ins Bett
+        target = round(target + steps * MOVE_STEPS[self._move_step], 3)
+        if high > low:
+            target = min(max(target, low), high)
+        self._jog[2] = target
+
+    def _finish_jog(self, now: float) -> None:
+        """Zur Zielposition fahren; die Achsauswahl bleibt offen."""
+        action, position, target = self._jog
+        self._jog = None
+        delta = round(target - position, 3)
+        if not delta:
+            return
+        if not self._allowed(action):
+            self.notice(self._t("not_now"), now)
+            return
+        axis = action.payload
+        speed = self._speeds[axis]
+        script = "SAVE_GCODE_STATE NAME=lcd_move\nG91\nG1 %s%s F%d\nRESTORE_GCODE_STATE NAME=lcd_move" % (
+            axis.upper(), _number(delta), speed)
+        self._on_action(Action("gcode", action.label, payload=script, when="idle"))
+
+    def _speed_values(self, axis: str) -> list:
+        return sorted(set(MOVE_SPEEDS) | {self._speeds[axis], self._speed_edit[1]})
 
     def _start_edit(self, action: Action) -> None:
         heater = self._heater(action.payload)
@@ -359,6 +447,12 @@ class UI:
             return self._render_question(ctx)
         if self._edit is not None:
             return self._render_edit(ctx)
+        if self._jog is not None:
+            return self._render_jog(ctx)
+        if self._step_edit is not None:
+            return self._render_step(ctx)
+        if self._speed_edit is not None:
+            return self._render_speed(ctx)
         if self._menu is not None:
             return self._render_menu(ctx)
         return page_list[self._page]()
@@ -393,11 +487,48 @@ class UI:
             screen.center(self._t("edit_hint"), self.cols),
         ])
 
+    def _render_jog(self, ctx) -> list:
+        action, position, target = self._jog
+        goal = screen.spread(self._t("target"), "%.1f mm" % target, self.cols)
+        if self.rows < 4:
+            return ctx.finish([screen.spread(action.label, "%.1f" % position, self.cols), goal])
+        step = "%s %s" % (self._t("step"), _number(MOVE_STEPS[self._move_step]))
+        return ctx.finish([
+            screen.spread(action.label, step, self.cols),
+            screen.spread(self._t("current"), "%.1f mm" % position, self.cols),
+            goal,
+            screen.center(self._t("edit_hint"), self.cols),
+        ])
+
+    def _render_step(self, ctx) -> list:
+        value = screen.spread(self._t("step"), "%s mm" % _number(MOVE_STEPS[self._step_edit]), self.cols)
+        if self.rows < 4:
+            return ctx.finish([value, screen.center(self._t("edit_hint"), self.cols)])
+        return ctx.finish(["", value, "", screen.center(self._t("edit_hint"), self.cols)])
+
+    def _speed_text(self, speed: int) -> str:
+        return "%d mm/min" % speed if self.cols >= 20 else "%d" % speed
+
+    def _render_speed(self, ctx) -> list:
+        axis, speed = self._speed_edit
+        value = screen.spread("%s %s" % (self._t("speed"), axis.upper()), self._speed_text(speed), self.cols)
+        if self.rows < 4:
+            return ctx.finish([value, screen.center(self._t("edit_hint"), self.cols)])
+        return ctx.finish(["", value, "", screen.center(self._t("edit_hint"), self.cols)])
+
     def _label(self, action: Action) -> str:
         """Menuetext; bei Temperaturen mit dem aktuellen Ziel."""
         if action.kind == "edit":
             heater = self._heater(action.payload)
             return "%s: %s" % (action.label, self._degrees(heater.target if heater else 0))
+        if action.kind == "jog":
+            axis = action.payload
+            value = "%.1f" % self._printer.position(axis) if self._printer.homed(axis) else "?"
+            return "%s: %s" % (action.label, value)
+        if action.kind == "step":
+            return "%s: %s mm" % (action.label, _number(MOVE_STEPS[self._move_step]))
+        if action.kind == "speed":
+            return "%s: %d" % (action.label, self._speeds[action.payload])
         if action.kind == "submenu":
             return action.label + " >"
         return action.label
@@ -420,3 +551,8 @@ class UI:
 
 def _set_target(heater: str, value: int) -> str:
     return "SET_HEATER_TEMPERATURE HEATER=%s TARGET=%d" % (heater, value)
+
+
+def _number(value: float) -> str:
+    """1.0 -> "1", 0.10 -> "0.1", -2.5 -> "-2.5"."""
+    return ("%.3f" % value).rstrip("0").rstrip(".")

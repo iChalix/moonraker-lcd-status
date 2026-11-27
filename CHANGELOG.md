@@ -13,6 +13,14 @@ Release einen datierten Abschnitt.
 
 ## [Unreleased]
 
+### Neu
+
+* Untermenü **Achsen bewegen**: Achse wählen, Zielposition drehen, Klick fährt
+  hin; Schrittweite 0,1/1/10 mm und Tempo je Achse als eigene Menüpunkte, Grenzen
+  aus Klipper, Z nie unter 0, nur nach dem Homing und ohne Druck. Dazu „Motoren
+  aus“ (`M84`). Abschalten mit `[menu] move = no`, Starttempo `move_speed_x`,
+  `move_speed_y`, `move_speed_z` in mm/min (3000/3000/200).
+
 ## [1.1.0] - 2026-11-27
 
 ### Neu

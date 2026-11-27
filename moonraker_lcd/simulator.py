@@ -26,7 +26,8 @@ def base_objects() -> dict:
         "display_status": {"progress": 0.0, "message": None},
         "pause_resume": {"is_paused": False},
         "idle_timeout": {"state": "Idle"},
-        "toolhead": {"extruder": "extruder"},
+        "toolhead": {"extruder": "extruder", "homed_axes": "", "position": [0.0, 0.0, 0.0, 0.0],
+                     "axis_minimum": [0.0, 0.0, -2.0, 0.0], "axis_maximum": [300.0, 300.0, 300.0, 0.0]},
         "gcode_move": {"gcode_position": [0, 0, 0, 0], "speed_factor": 1.0, "extrude_factor": 1.0},
         "fan": {"speed": 0.0},
         "extruder": {"temperature": 24.1, "target": 0.0},
@@ -103,9 +104,24 @@ class SimulatedClient:
             self.printer.update_objects({name: {"temperature": temperature + (target - temperature) * 0.15}})
 
     def _gcode(self, script: str) -> None:
+        toolhead = self.printer.objects.setdefault("toolhead", {})
         for line in script.splitlines():
             found = re.match(r"SET_HEATER_TEMPERATURE HEATER=(\S+) TARGET=(\d+)", line)
-            if found:
+            words = line.split()
+            if words[:1] == ["G28"]:
+                axes = "".join(w.lower() for w in words[1:]) or "xyz"
+                homed = set(toolhead.get("homed_axes", "")) | set(axes)
+                position = list(toolhead.get("position", [0.0] * 4))
+                for axis in axes:
+                    position["xyz".index(axis)] = 0.0
+                toolhead.update({"homed_axes": "".join(a for a in "xyz" if a in homed), "position": position})
+            elif words[:1] == ["G1"] and len(words) > 1:
+                position = list(toolhead.get("position", [0.0] * 4))
+                position["XYZ".index(words[1][0])] += float(words[1][1:])
+                toolhead["position"] = position
+            elif line == "M84":
+                toolhead["homed_axes"] = ""
+            elif found:
                 self.printer.update_objects({found.group(1): {"target": float(found.group(2))}})
             elif line == "TURN_OFF_HEATERS":
                 self.printer.update_objects({"extruder": {"target": 0.0}, "heater_bed": {"target": 0.0}})
