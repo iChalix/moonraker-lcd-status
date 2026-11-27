@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 
 from .service import Service, run_tasks
 
+#: so lange steht der Scheindrucker still, bevor er "druckt" (Menues ausprobieren)
+IDLE_SECONDS = 120
 FILENAME = "Benchy_0.2mm_PLA_BLV_1h12m.gcode"
 METADATA = {
     "estimated_time": 4320, "layer_height": 0.2, "first_layer_height": 0.2, "object_height": 40.0,
@@ -30,6 +33,7 @@ def base_objects() -> dict:
         "heater_bed": {"temperature": 22.4, "target": 0.0},
         "heater_generic chamber": {"temperature": 25.0, "target": 0.0},
         "temperature_sensor raspberry_pi": {"temperature": 48.3},
+        "configfile": {"settings": {"extruder": {"max_temp": 280}, "heater_bed": {"max_temp": 120}}},
     }
 
 
@@ -78,7 +82,9 @@ class SimulatedClient:
         started = time.monotonic()
         while True:
             await asyncio.sleep(0.5)
-            if self.phase == "idle" and time.monotonic() - started > 8:
+            if self.phase == "idle":
+                self._approach_targets()
+            if self.phase == "idle" and time.monotonic() - started > IDLE_SECONDS:
                 self.phase = "printing"
                 self.printer.set_metadata(FILENAME, METADATA)
             if self.phase == "printing":
@@ -89,8 +95,25 @@ class SimulatedClient:
                     self.printer.update_objects({"print_stats": {"state": "complete"}})
             self._on_change()
 
+    def _approach_targets(self) -> None:
+        for name in ("extruder", "heater_bed"):
+            values = self.printer.objects.get(name, {})
+            target = values.get("target") or 22.0
+            temperature = values.get("temperature", 22.0)
+            self.printer.update_objects({name: {"temperature": temperature + (target - temperature) * 0.15}})
+
+    def _gcode(self, script: str) -> None:
+        for line in script.splitlines():
+            found = re.match(r"SET_HEATER_TEMPERATURE HEATER=(\S+) TARGET=(\d+)", line)
+            if found:
+                self.printer.update_objects({found.group(1): {"target": float(found.group(2))}})
+            elif line == "TURN_OFF_HEATERS":
+                self.printer.update_objects({"extruder": {"target": 0.0}, "heater_bed": {"target": 0.0}})
+
     async def call(self, method: str, params=None, timeout: float = None):
         self.calls.append((method, params))
+        if method == "printer.gcode.script":
+            self._gcode(params["script"])
         if method == "printer.print.pause":
             self.phase = "paused"
             self.printer.update_objects({"print_stats": {"state": "paused"}})

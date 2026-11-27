@@ -89,9 +89,17 @@ richtige Arduino gemeldet hat. Andere Programme prüfen das nicht.
 
 | Eingabe | Auf den Seiten | Im Menü |
 |---|---|---|
-| Drehen | nächste/vorige Seite | Auswahl bewegen |
-| Drücken | Menü öffnen | auswählen |
-| Lang drücken | zur ersten Seite | zurück |
+| Drehen | nächste/vorige Seite | Auswahl bewegen, Temperatur ändern |
+| Drücken | Menü öffnen | auswählen, Temperatur übernehmen |
+| Lang drücken | zur ersten Seite | eine Ebene zurück |
+
+Im Menü stehen außerdem:
+
+* **Homing ›** – alle Achsen, X und Y zusammen, X, Y oder Z (`G28`), nur ohne Druck.
+* **Heizen ›** – Vorgaben wie „PLA 200°/60°“ und „Abkühlen“ (nur ohne Druck)
+  sowie die Zieltemperatur von Hotend und Bett. Die stellt man mit dem Drehgeber
+  in Schritten von 5° ein und übernimmt sie per Klick. Das geht auch während
+  eines Drucks. Nach oben begrenzt `max_temp` aus der Klipper-Konfiguration.
 
 Das Menü zeigt nur, was gerade möglich ist. Abbrechen, Neustart und Herunterfahren
 fragen nach, „Nein“ ist vorausgewählt. Ohne Eingabe schließt sich das Menü. Ist die
@@ -103,13 +111,24 @@ dafür nicht zuverlässig genug.
 ## Konfiguration
 
 Vollständig kommentiert in [config/moonraker-lcd.conf](config/moonraker-lcd.conf).
+Eigene Vorheiz-Vorgaben ersetzen PLA, PETG und ABS:
+
+```ini
+[preheat PLA]
+extruder = 210
+bed = 60
+
+[preheat TPU]
+extruder = 225
+bed = 50
+```
+
 Eigene Menüpunkte:
 
 ```ini
-[menu_item Vorheizen PLA]
-gcode =
-  M140 S60
-  M104 S200
+[menu_item Bett vermessen]
+gcode = BED_MESH_CALIBRATE
+confirm = yes
 
 [menu_item Licht]
 power_device = licht

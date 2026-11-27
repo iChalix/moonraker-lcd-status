@@ -20,6 +20,8 @@ BASE_OBJECTS = {
     "toolhead": ["extruder"],
     "gcode_move": ["gcode_position", "speed_factor", "extrude_factor"],
     "fan": ["speed"],
+    # nur fuer max_temp der Heizer (Grenze beim Einstellen im Menue)
+    "configfile": ["settings"],
 }
 HEATER_FIELDS = ["temperature", "target"]
 HEATER_PREFIXES = ("heater_generic ", "temperature_fan ")
@@ -374,6 +376,12 @@ class Printer:
             if heater.object == active:
                 return heater
         return extruders[0] if extruders else None
+
+    def max_temp(self, name: str) -> float:
+        """``max_temp`` aus Klippers Konfiguration, sonst 300."""
+        settings = self.get("configfile", "settings", {}) or {}
+        value = number((settings.get(name) or {}).get("max_temp"), 0.0)
+        return value if value > 0 else 300.0
 
     @property
     def bed(self):

@@ -14,13 +14,19 @@ from .config import Config
 from .printer import Phase
 
 BACK = "back"
+MAIN = "main"
+#: Homing-Untermenue: (Text, G-Code)
+HOMING = (
+    ("home_all", "G28"), ("home_xy", "G28 X Y"), ("home_x", "G28 X"), ("home_y", "G28 Y"),
+    ("home_z", "G28 Z"),
+)
 
 
 @dataclass(frozen=True)
 class Action:
     """Was der Dienst ausfuehren soll."""
 
-    kind: str  # rpc | gcode | power | refresh | back
+    kind: str  # rpc | gcode | power | refresh | back | submenu | edit
     label: str
     method: str = ""
     payload: str = ""
@@ -33,8 +39,10 @@ def allowed(action: Action, phase: Phase) -> bool:
     when = action.when
     if when == "fault":
         return phase.fault
-    if action.kind == "gcode" and not phase.ready:
+    if action.kind in ("gcode", "edit") and not phase.ready:
         return False
+    if when == "ready":
+        return phase.ready
     if when == "always":
         return phase is not Phase.OFFLINE
     if when == "printing":
@@ -59,7 +67,10 @@ class UI:
         self._page_since = 0.0
         self._last_input = 0.0
         self._menu = None      # Liste der Actions oder None
+        self._menu_id = MAIN
+        self._stack = []       # (Menue, Cursor) der uebergeordneten Menues
         self._cursor = 0
+        self._edit = None      # [Action, Wert] beim Einstellen einer Temperatur
         self._question = None  # Action, die auf Ja/Nein wartet
         self._answer = False
         self._notice = None    # (Text, Ablaufzeit)
@@ -83,6 +94,10 @@ class UI:
         if self._question is not None:
             # im Uhrzeigersinn zum Ja, zurueck zum Nein
             self._answer = steps > 0
+        elif self._edit is not None:
+            step = self._config.menu.temperature_step
+            top = int(self._printer.max_temp(self._edit[0].payload))
+            self._edit[1] = min(max(self._edit[1] + steps * step, 0), top)
         elif self._menu is not None:
             self._cursor = min(max(self._cursor + steps, 0), len(self._menu) - 1)
         else:
@@ -102,14 +117,21 @@ class UI:
             if answer:
                 self._execute(action, now)
             else:
-                self._menu = None
+                self._close_menu()
+            return
+        if self._edit is not None:
+            self._finish_edit(now)
             return
         if self._menu is None:
             self._open_menu()
             return
         action = self._menu[self._cursor]
         if action.kind == BACK:
-            self._menu = None
+            self._leave_menu()
+        elif action.kind == "submenu":
+            self._enter_menu(action.payload)
+        elif action.kind == "edit":
+            self._start_edit(action)
         elif action.confirm:
             self._question, self._answer = action, False
         else:
@@ -123,8 +145,10 @@ class UI:
             self._notice = None
         elif self._question is not None:
             self._question = None
+        elif self._edit is not None:
+            self._edit = None
         elif self._menu is not None:
-            self._menu = None
+            self._leave_menu()
         else:
             self._page = 0
 
@@ -134,8 +158,15 @@ class UI:
 
     # ------------------------------------------------------------ Menue
 
-    def actions(self) -> list:
+    def actions(self, menu_id: str = MAIN) -> list:
         """Alle gerade passenden Menuepunkte."""
+        if menu_id == "home":
+            candidates = [Action(BACK, self._t("back"))] + [
+                Action("gcode", self._t(key), payload=gcode, when="idle") for key, gcode in HOMING
+            ]
+            return [action for action in candidates if self._allowed(action)]
+        if menu_id == "heat":
+            return [action for action in self._heat_actions() if self._allowed(action)]
         t, menu = self._t, self._config.menu
         candidates = [Action(BACK, t("back"))]
         if menu.pause:
@@ -149,6 +180,10 @@ class UI:
             candidates.append(
                 Action("rpc", t("firmware_restart"), "printer.firmware_restart", confirm=True, when="fault")
             )
+        if menu.homing:
+            candidates.append(Action("submenu", t("home"), payload="home", when="idle"))
+        if menu.heating and (self._printer.extruder or self._printer.bed):
+            candidates.append(Action("submenu", t("heat"), payload="heat", when="ready"))
         for item in menu.items:
             candidates.append(
                 Action(
@@ -165,6 +200,28 @@ class UI:
             )
         return [action for action in candidates if self._allowed(action)]
 
+    def _heat_actions(self) -> list:
+        """Vorgaben und Abkuehlen nur ohne Druck, Zieltemperaturen auch waehrend."""
+        t, printer = self._t, self._printer
+        extruder, bed = printer.extruder, printer.bed
+        actions = [Action(BACK, t("back"))]
+        for preset in self._config.menu.preheats:
+            lines, parts = [], []
+            if preset.extruder and extruder:
+                lines.append(_set_target(extruder.object, preset.extruder))
+                parts.append("%d°" % preset.extruder)
+            if preset.bed and bed:
+                lines.append(_set_target(bed.object, preset.bed))
+                parts.append("%d°" % preset.bed)
+            if lines:
+                label = "%s %s" % (preset.label, "/".join(parts))
+                actions.append(Action("gcode", label, payload="\n".join(lines), when="idle"))
+        for heater in (extruder, bed):
+            if heater:
+                actions.append(Action("edit", heater.name, payload=heater.object, when="ready"))
+        actions.append(Action("gcode", t("cooldown"), payload="TURN_OFF_HEATERS", when="idle"))
+        return actions
+
     def _allowed(self, action: Action) -> bool:
         if action.kind == BACK or action.when == "display":
             return True
@@ -177,26 +234,72 @@ class UI:
     def _open_menu(self) -> None:
         if not self._config.menu.enabled:
             return
+        self._menu_id, self._stack = MAIN, []
         self._menu = self.actions()
         self._cursor = 0
+
+    def _close_menu(self) -> None:
+        self._menu, self._menu_id, self._stack, self._edit = None, MAIN, [], None
+
+    def _enter_menu(self, menu_id: str) -> None:
+        self._stack.append((self._menu_id, self._cursor))
+        self._menu_id = menu_id
+        self._menu = self.actions(menu_id)
+        self._cursor = 0
+
+    def _leave_menu(self) -> None:
+        """Eine Ebene zurueck; im Hauptmenue schliessen."""
+        if not self._stack:
+            self._close_menu()
+            return
+        self._menu_id, cursor = self._stack.pop()
+        self._menu = self.actions(self._menu_id)
+        self._cursor = min(cursor, len(self._menu) - 1)
 
     def _refresh_menu(self) -> None:
         """Menue an den neuen Zustand anpassen; der Cursor bleibt auf demselben
         Eintrag. Ist der verschwunden, steht er auf "Zurueck" - nie auf einem
         Befehl, den der Benutzer nicht ausgewaehlt hat."""
+        if self._edit is not None and not self._allowed(self._edit[0]):
+            self._edit = None
         if self._menu is None:
             return
         selected = self._menu[self._cursor]
-        self._menu = self.actions()
+        self._menu = self.actions(self._menu_id)
         self._cursor = self._menu.index(selected) if selected in self._menu else 0
 
     def _execute(self, action: Action, now: float) -> None:
-        self._menu = None
+        self._close_menu()
         # zwischen Anzeige und Druck auf den Knopf kann sich der Zustand aendern
         if not self._allowed(action):
             self.notice(self._t("not_now"), now)
             return
         self._on_action(action)
+
+    def _heater(self, name: str):
+        for heater in self._printer.heaters:
+            if heater.object == name:
+                return heater
+        return None
+
+    def _start_edit(self, action: Action) -> None:
+        heater = self._heater(action.payload)
+        value = heater.target if heater else 0
+        if not value:
+            # Startwert: erste Vorgabe fuer diesen Heizer
+            kind = "bed" if action.payload == "heater_bed" else "extruder"
+            values = [getattr(p, kind) for p in self._config.menu.preheats if getattr(p, kind)]
+            value = values[0] if values else 0
+        self._edit = [action, int(round(value))]
+
+    def _finish_edit(self, now: float) -> None:
+        """Zieltemperatur senden; das Heizen-Menue bleibt offen."""
+        action, value = self._edit
+        self._edit = None
+        if not self._allowed(action):
+            self.notice(self._t("not_now"), now)
+            return
+        self._on_action(Action("gcode", action.label, payload=_set_target(action.payload, value), when="ready"))
 
     # ------------------------------------------------------------ Zeitablauf
 
@@ -222,7 +325,7 @@ class UI:
         display = self._config.display
         idle_for = now - self._last_input
         if self._menu is not None and idle_for >= self._config.menu.timeout:
-            self._menu = None
+            self._close_menu()
             self._question = None
         if self._menu is None and self._question is None:
             if display.auto_rotate > 0 and idle_for >= display.auto_rotate:
@@ -254,6 +357,8 @@ class UI:
             return self._render_notice(ctx)
         if self._question is not None:
             return self._render_question(ctx)
+        if self._edit is not None:
+            return self._render_edit(ctx)
         if self._menu is not None:
             return self._render_menu(ctx)
         return page_list[self._page]()
@@ -271,6 +376,32 @@ class UI:
             lines += [self._t("sure"), ""]
         return ctx.finish(lines + [choice])
 
+    def _degrees(self, value: float) -> str:
+        return "%d°" % round(value) if value > 0 else self._t("off")
+
+    def _render_edit(self, ctx) -> list:
+        action, value = self._edit
+        heater = self._heater(action.payload)
+        current = "%.0f°" % heater.temperature if heater else "-"
+        target = screen.spread(self._t("target"), self._degrees(value), self.cols)
+        if self.rows < 4:
+            return ctx.finish([screen.spread(action.label, current, self.cols), target])
+        return ctx.finish([
+            screen.fit(action.label, self.cols),
+            screen.spread(self._t("current"), current, self.cols),
+            target,
+            screen.center(self._t("edit_hint"), self.cols),
+        ])
+
+    def _label(self, action: Action) -> str:
+        """Menuetext; bei Temperaturen mit dem aktuellen Ziel."""
+        if action.kind == "edit":
+            heater = self._heater(action.payload)
+            return "%s: %s" % (action.label, self._degrees(heater.target if heater else 0))
+        if action.kind == "submenu":
+            return action.label + " >"
+        return action.label
+
     def _render_menu(self, ctx) -> list:
         # den Cursor moeglichst in der Mitte halten
         top = min(max(self._cursor - 1, 0), max(len(self._menu) - self.rows, 0))
@@ -280,8 +411,12 @@ class UI:
         for index, action in enumerate(self._menu[top : top + self.rows], start=top):
             marker = ">" if index == self._cursor else " "
             width = self.cols - 1
-            text = action.label
+            text = self._label(action)
             lines.append(marker + (
                 screen.ticker(text, width, ctx.now) if index == self._cursor else screen.fit(text, width)
             ))
         return ctx.finish(lines)
+
+
+def _set_target(heater: str, value: int) -> str:
+    return "SET_HEATER_TEMPERATURE HEATER=%s TARGET=%d" % (heater, value)

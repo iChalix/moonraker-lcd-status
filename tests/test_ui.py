@@ -3,7 +3,7 @@ import random
 import unittest
 
 from moonraker_lcd import screen, simulator
-from moonraker_lcd.config import Config, MenuItemConfig
+from moonraker_lcd.config import Config, MenuItemConfig, PreheatConfig
 
 from tests.helpers import WALL, make_printer, make_ui, printing_printer
 
@@ -145,9 +145,9 @@ class MenuTest(unittest.TestCase):
 
     def test_entries_depend_on_the_state(self):
         ui, _ = make_ui(make_printer())
-        self.assertEqual(self.labels(ui), ["Zurück", "Anzeige auffrischen"])
+        self.assertEqual(self.labels(ui), ["Zurück", "Homing", "Heizen", "Anzeige auffrischen"])
         ui, _ = make_ui(printing_printer())
-        self.assertEqual(self.labels(ui), ["Zurück", "Pause", "Abbrechen", "Anzeige auffrischen"])
+        self.assertEqual(self.labels(ui), ["Zurück", "Pause", "Abbrechen", "Heizen", "Anzeige auffrischen"])
         printer = printing_printer()
         printer.update_objects({"print_stats": {"state": "paused"}})
         ui, _ = make_ui(printer)
@@ -276,6 +276,146 @@ class MenuTest(unittest.TestCase):
         ui, calls = make_ui(printing_printer(), cols=16, rows=2)
         self.select(ui, "Abbrechen")
         self.assertIn(">Nein", ui.render(1.0, WALL)[1])
+
+
+class HomingHeatingTest(unittest.TestCase):
+    select = MenuTest.select
+
+    def menu(self, ui, now=1.0):
+        return [line.strip() for line in ui.render(now, WALL)]
+
+    def test_homing(self):
+        ui, calls = make_ui(make_printer())
+        self.select(ui, "Homing")
+        self.assertEqual([a.label for a in ui.actions("home")],
+                         ["Zurück", "Alle Achsen", "X- und Y-Achse", "X-Achse", "Y-Achse", "Z-Achse"])
+        self.select_here(ui, "Z-Achse")
+        self.assertEqual((calls[0].kind, calls[0].payload), ("gcode", "G28 Z"))
+        self.assertNotIn(">", "".join(ui.render(1.0, WALL)))  # Menue geschlossen
+        self.select(ui, "Homing")
+        self.select_here(ui, "X- und Y")
+        self.assertEqual(calls[1].payload, "G28 X Y")
+
+    def select_here(self, ui, label, now=1.0):
+        """Im schon offenen (Unter-)Menue auswaehlen."""
+        for _ in range(20):
+            lines = ui.render(now, WALL)
+            if any(line.startswith(">" + label) for line in lines):
+                ui.click(now)
+                return
+            ui.rotate(1, now)
+        self.fail("%r nicht im Menue: %r" % (label, lines))
+
+    def test_no_homing_while_printing(self):
+        ui, _ = make_ui(printing_printer())
+        self.assertNotIn("Homing", [a.label for a in ui.actions()])
+        self.assertEqual([a.label for a in ui.actions("home")], ["Zurück"])
+
+    def test_submenus_can_be_switched_off(self):
+        config = Config()
+        config.menu.homing = config.menu.heating = False
+        ui, _ = make_ui(make_printer(config), config)
+        self.assertEqual([a.label for a in ui.actions()], ["Zurück", "Anzeige auffrischen"])
+
+    def test_preheat(self):
+        ui, calls = make_ui(make_printer())
+        self.select(ui, "Heizen")
+        self.assertEqual(self.menu(ui), [">Zurück", "PLA 200°/60°", "PETG 240°/80°", "ABS 250°/100°"])
+        self.select_here(ui, "PLA")
+        self.assertEqual(calls[0].payload, "SET_HEATER_TEMPERATURE HEATER=extruder TARGET=200\n"
+                                           "SET_HEATER_TEMPERATURE HEATER=heater_bed TARGET=60")
+
+    def test_own_preheats_and_cooldown(self):
+        config = Config()
+        config.menu.preheats = [PreheatConfig("Nur Bett", bed=70)]
+        ui, calls = make_ui(make_printer(config), config)
+        self.assertEqual([a.label for a in ui.actions("heat")],
+                         ["Zurück", "Nur Bett 70°", "Hotend", "Bett", "Abkühlen"])
+        self.select(ui, "Heizen")
+        self.select_here(ui, "Abkühlen")
+        self.assertEqual(calls[0].payload, "TURN_OFF_HEATERS")
+
+    def test_while_printing_only_targets(self):
+        ui, _ = make_ui(printing_printer())
+        self.assertEqual([a.label for a in ui.actions("heat")], ["Zurück", "Hotend", "Bett"])
+        self.select(ui, "Heizen")
+        self.assertEqual(self.menu(ui)[1:3], ["Hotend: 235°", "Bett: 60°"])
+
+    def test_set_target_with_the_encoder(self):
+        ui, calls = make_ui(make_printer())
+        self.select(ui, "Heizen")
+        self.select_here(ui, "Hotend")
+        # Ziel war aus: Start bei der ersten Vorgabe
+        self.assertEqual(ui.render(1.0, WALL), [
+            "Hotend              ", "Ist              24°", "Ziel            200°", "     Klick = OK     "])
+        ui.rotate(3, 1.0)
+        self.assertEqual(ui.render(1.0, WALL)[2], "Ziel            215°")
+        ui.click(1.0)
+        self.assertEqual(calls[0].payload, "SET_HEATER_TEMPERATURE HEATER=extruder TARGET=215")
+        # das Heizen-Menue bleibt offen
+        self.assertTrue(any(line.startswith(">Hotend: aus") for line in ui.render(1.0, WALL)))
+
+    def test_target_limits(self):
+        ui, calls = make_ui(make_printer())
+        self.select(ui, "Heizen")
+        self.select_here(ui, "Bett")
+        ui.rotate(-50, 1.0)
+        self.assertEqual(ui.render(1.0, WALL)[2], "Ziel             aus")
+        ui.rotate(500, 1.0)
+        self.assertEqual(ui.render(1.0, WALL)[2], "Ziel            120°")  # max_temp aus Klipper
+        ui.click(1.0)
+        self.assertEqual(calls[0].payload, "SET_HEATER_TEMPERATURE HEATER=heater_bed TARGET=120")
+
+    def test_target_during_print_starts_at_the_current_target(self):
+        ui, calls = make_ui(printing_printer())
+        self.select(ui, "Heizen")
+        self.select_here(ui, "Hotend")
+        ui.rotate(-1, 1.0)
+        ui.click(1.0)
+        self.assertEqual(calls[0].payload, "SET_HEATER_TEMPERATURE HEATER=extruder TARGET=230")
+
+    def test_long_press_goes_back_one_level(self):
+        ui, calls = make_ui(make_printer())
+        page = ui.render(1.0, WALL)
+        self.select(ui, "Heizen")
+        self.select_here(ui, "Hotend")
+        ui.long_press(1.0)  # Einstellen abbrechen
+        self.assertTrue(any(line.startswith(">Hotend") for line in ui.render(1.0, WALL)))
+        ui.long_press(1.0)  # ins Hauptmenue, Auswahl bleibt auf "Heizen"
+        self.assertTrue(any(line.startswith(">Heizen") for line in ui.render(1.0, WALL)))
+        ui.long_press(1.0)
+        self.assertEqual(ui.render(1.0, WALL), page)
+        self.assertEqual(calls, [])
+
+    def test_back_returns_to_the_main_menu(self):
+        ui, _ = make_ui(make_printer())
+        self.select(ui, "Homing")
+        ui.click(1.0)  # "Zurueck"
+        self.assertTrue(any(line.startswith(">Homing") for line in ui.render(1.0, WALL)))
+
+    def test_editing_stops_when_klipper_stops(self):
+        printer = make_printer()
+        ui, calls = make_ui(printer)
+        self.select(ui, "Heizen")
+        self.select_here(ui, "Hotend")
+        printer.set_klippy("shutdown")
+        self.assertNotIn("Ziel", "".join(ui.render(1.1, WALL)))
+        ui.click(1.2)
+        self.assertEqual(calls, [])
+
+    def test_editing_times_out(self):
+        ui, calls = make_ui(make_printer())
+        page = ui.render(1.0, WALL)
+        self.select(ui, "Heizen")
+        self.select_here(ui, "Hotend")
+        self.assertEqual(ui.render(30.0, WALL), page)
+        self.assertEqual(calls, [])
+
+    def test_small_display(self):
+        ui, _ = make_ui(make_printer(), cols=16, rows=2)
+        self.select(ui, "Heizen")
+        self.select_here(ui, "Hotend")
+        self.assertEqual(ui.render(1.0, WALL), ["Hotend       24°", "Ziel        200°"])
 
 
 class BacklightTest(unittest.TestCase):

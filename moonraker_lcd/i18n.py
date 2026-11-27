@@ -19,6 +19,9 @@ TEXTS = {
         "not_now": "Jetzt nicht möglich", "sketch_old": "Sketch veraltet", "sketch_flash": "bitte neu flashen",
         "service_old": "Dienst veraltet", "bye": "Anzeige beendet",
         "days": "Mo Di Mi Do Fr Sa So",
+        "home": "Homing", "home_all": "Alle Achsen", "home_xy": "X- und Y-Achse", "home_x": "X-Achse", "home_y": "Y-Achse",
+        "home_z": "Z-Achse", "heat": "Heizen", "cooldown": "Abkühlen", "off": "aus",
+        "current": "Ist", "target": "Ziel", "edit_hint": "Klick = OK",
     },
     "en": {
         "standby": "ready", "busy": "busy", "printing": "printing", "paused": "paused",
@@ -36,6 +39,9 @@ TEXTS = {
         "not_now": "Not possible now", "sketch_old": "Sketch outdated", "sketch_flash": "please reflash",
         "service_old": "Service outdated", "bye": "Display stopped",
         "days": "Mon Tue Wed Thu Fri Sat Sun",
+        "home": "Home", "home_all": "Home all", "home_xy": "Home XY", "home_x": "Home X", "home_y": "Home Y",
+        "home_z": "Home Z", "heat": "Heat", "cooldown": "Cool down", "off": "off",
+        "current": "Now", "target": "Target", "edit_hint": "Click = OK",
     },
 }
 

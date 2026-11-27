@@ -13,6 +13,18 @@ Release einen datierten Abschnitt.
 
 ## [Unreleased]
 
+### Neu
+
+* Untermenü **Homing**: alle Achsen, X und Y zusammen, X, Y oder Z (nur ohne Druck).
+* Untermenü **Heizen**: Vorgaben (Standard PLA, PETG, ABS; eigene per
+  `[preheat NAME]`), Abkühlen und die Zieltemperatur von Hotend und Bett per
+  Drehgeber – auch während des Drucks, begrenzt durch `max_temp` aus Klipper.
+  Abschalten mit `[menu] homing = no` bzw. `heating = no`, Schrittweite
+  `temperature_step`.
+* Langes Drücken geht im Menü eine Ebene zurück.
+* Die Simulation steht zwei Minuten still, bevor sie „druckt“, und heizt auf
+  Menübefehle hin.
+
 ## [1.0.1] - 2026-11-27
 
 ### Behoben

@@ -63,6 +63,19 @@ class ConfigTest(unittest.TestCase):
             with self.assertRaises(config_module.ConfigError, msg=text):
                 load(text)
 
+    def test_preheats(self):
+        self.assertEqual([p.label for p in config_module.Config().menu.preheats], ["PLA", "PETG", "ABS"])
+        cfg = load("[menu]\ntemperature_step = 2\nhoming = no\n"
+                   "[preheat TPU]\nextruder = 225\nbed = 50\n[preheat]\nlabel = Bett\nbed = 90\n")
+        self.assertEqual(cfg.menu.temperature_step, 2)
+        self.assertFalse(cfg.menu.homing)
+        self.assertEqual([(p.label, p.extruder, p.bed) for p in cfg.menu.preheats],
+                         [("TPU", 225, 50), ("Bett", 0, 90)])
+        for text in ("[preheat A]\n", "[preheat A]\nbed = -1\n", "[preheat]\nbed = 60\n",
+                     "[preheat A]\nnozzle = 200\n", "[menu]\ntemperature_step = 0\n"):
+            with self.assertRaises(config_module.ConfigError, msg=text):
+                load(text)
+
     def test_missing_explicit_file(self):
         with self.assertRaises(config_module.ConfigError):
             config_module.load("/gibt/es/nicht.conf")

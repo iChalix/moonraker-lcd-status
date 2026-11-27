@@ -89,15 +89,33 @@ class MenuItemConfig:
 
 
 @dataclass
+class PreheatConfig:
+    """Vorheiz-Vorgabe aus ``[preheat NAME]``; 0 = Heizer nicht anfassen."""
+
+    label: str
+    extruder: int = 0
+    bed: int = 0
+
+
+#: gilt, solange kein ``[preheat ...]`` konfiguriert ist
+DEFAULT_PREHEATS = (PreheatConfig("PLA", 200, 60), PreheatConfig("PETG", 240, 80), PreheatConfig("ABS", 250, 100))
+
+
+@dataclass
 class MenuConfig:
     enabled: bool = True
     timeout: float = 20.0
     pause: bool = True
     cancel: bool = True
     firmware_restart: bool = True
+    homing: bool = True
+    heating: bool = True
+    #: Schrittweite beim Einstellen einer Zieltemperatur (Grad je Rastung)
+    temperature_step: int = 5
     reboot: bool = False
     shutdown: bool = False
     items: list = field(default_factory=list)
+    preheats: list = field(default_factory=lambda: list(DEFAULT_PREHEATS))
 
 
 @dataclass
@@ -135,6 +153,9 @@ class Config:
             "  Seiten    : %s" % ", ".join(self.display.pages),
             "  Drehgeber : %s" % ("ja" if self.encoder.enabled else "nein"),
         ]
+        if self.menu.heating and self.menu.preheats:
+            lines.append("  Vorheizen : %s" % ", ".join(
+                "%s %d/%d" % (p.label, p.extruder, p.bed) for p in self.menu.preheats))
         for item in self.menu.items:
             lines.append("  Menuepunkt: %s (%s)" % (item.label, item.when))
         for note in self.warnings():
@@ -190,10 +211,14 @@ _SECTIONS = {
     },
     "encoder": {"enabled", "reverse"},
     "progress": {"source", "eta"},
-    "menu": {"enabled", "timeout", "pause", "cancel", "firmware_restart", "reboot", "shutdown"},
+    "menu": {
+        "enabled", "timeout", "pause", "cancel", "firmware_restart", "homing", "heating",
+        "temperature_step", "reboot", "shutdown",
+    },
     "logging": {"level"},
 }
 _ITEM_KEYS = {"label", "gcode", "power_device", "confirm", "when"}
+_PREHEAT_KEYS = {"label", "extruder", "bed"}
 
 
 def load(path: str = "") -> Config:
@@ -226,6 +251,8 @@ def _check_keys(parser) -> None:
             continue
         if section.startswith("menu_item"):
             allowed = _ITEM_KEYS
+        elif section.startswith("preheat"):
+            allowed = _PREHEAT_KEYS
         elif section in _SECTIONS:
             allowed = _SECTIONS[section]
         else:
@@ -290,12 +317,18 @@ def _apply(cfg: Config, parser) -> None:
     if parser.has_section("menu"):
         sec, n = parser["menu"], cfg.menu
         n.timeout = sec.getfloat("timeout", n.timeout)
-        for key in ("enabled", "pause", "cancel", "firmware_restart", "reboot", "shutdown"):
+        n.temperature_step = sec.getint("temperature_step", n.temperature_step)
+        for key in ("enabled", "pause", "cancel", "firmware_restart", "homing", "heating", "reboot", "shutdown"):
             setattr(n, key, sec.getboolean(key, getattr(n, key)))
 
+    preheats = []
     for section in parser.sections():
         if section.startswith("menu_item"):
             cfg.menu.items.append(_menu_item(section, parser[section]))
+        elif section.startswith("preheat"):
+            preheats.append(_preheat(section, parser[section]))
+    if preheats:
+        cfg.menu.preheats = preheats
 
     if parser.has_section("names"):
         cfg.names = {key.strip(): value.strip() for key, value in parser["names"].items()}
@@ -325,6 +358,18 @@ def _menu_item(section: str, sec) -> MenuItemConfig:
     return item
 
 
+def _preheat(section: str, sec) -> PreheatConfig:
+    label = sec.get("label", section[len("preheat"):]).strip()
+    if not label:
+        raise ConfigError("[%s]: 'label' fehlt" % section)
+    preheat = PreheatConfig(label, sec.getint("extruder", 0), sec.getint("bed", 0))
+    if preheat.extruder < 0 or preheat.bed < 0:
+        raise ConfigError("[%s]: Temperaturen duerfen nicht negativ sein" % section)
+    if not (preheat.extruder or preheat.bed):
+        raise ConfigError("[%s]: 'extruder' oder 'bed' angeben" % section)
+    return preheat
+
+
 def validate(cfg: Config) -> None:
     if not cfg.display.pages:
         raise ConfigError("[display] pages: mindestens eine Seite noetig")
@@ -340,6 +385,8 @@ def validate(cfg: Config) -> None:
             raise ConfigError("[display] %s darf nicht negativ sein" % name)
     if cfg.menu.timeout <= 0:
         raise ConfigError("[menu] timeout muss > 0 sein")
+    if not 1 <= cfg.menu.temperature_step <= 50:
+        raise ConfigError("[menu] temperature_step muss zwischen 1 und 50 liegen")
     if cfg.serial.baudrate <= 0:
         raise ConfigError("[serial] baudrate muss > 0 sein")
     if cfg.moonraker.reconnect_min <= 0 or cfg.moonraker.connect_timeout <= 0:
