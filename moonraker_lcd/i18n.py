@@ -25,6 +25,7 @@ TEXTS = {
         "move": "Achsen bewegen", "axis_x": "X-Achse", "axis_y": "Y-Achse", "axis_z": "Z-Achse",
         "motors_off": "Motoren aus", "step": "Schritt", "home_first": "Erst Homing nötig",
         "load": "Laden", "unload": "Entladen", "temperature": "Temperatur", "part_fan": "Bauteillüfter",
+        "z_offset": "Z-Offset", "reset": "Zurücksetzen", "save": "Speichern",
     },
     "en": {
         "standby": "ready", "busy": "busy", "printing": "printing", "paused": "paused",
@@ -48,6 +49,7 @@ TEXTS = {
         "move": "Move axes", "axis_x": "X axis", "axis_y": "Y axis", "axis_z": "Z axis",
         "motors_off": "Motors off", "step": "Step", "home_first": "Home first",
         "load": "Load", "unload": "Unload", "temperature": "Temperature", "part_fan": "Part fan",
+        "z_offset": "Z offset", "reset": "Reset", "save": "Save",
     },
 }
 

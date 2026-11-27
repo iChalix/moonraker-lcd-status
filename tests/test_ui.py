@@ -146,10 +146,11 @@ class MenuTest(unittest.TestCase):
     def test_entries_depend_on_the_state(self):
         ui, _ = make_ui(make_printer())
         self.assertEqual(self.labels(ui),
-                         ["Zurück", "Homing", "Achsen bewegen", "Heizen", "Lüfter", "Filament",
+                         ["Zurück", "Homing", "Achsen bewegen", "Heizen", "Z-Offset", "Lüfter", "Filament",
                           "Anzeige auffrischen"])
         ui, _ = make_ui(printing_printer())
-        self.assertEqual(self.labels(ui), ["Zurück", "Pause", "Abbrechen", "Heizen", "Lüfter", "Anzeige auffrischen"])
+        self.assertEqual(self.labels(ui),
+                         ["Zurück", "Pause", "Abbrechen", "Heizen", "Z-Offset", "Lüfter", "Anzeige auffrischen"])
         printer = printing_printer()
         printer.update_objects({"print_stats": {"state": "paused"}})
         ui, _ = make_ui(printer)
@@ -317,7 +318,7 @@ class HomingHeatingTest(unittest.TestCase):
     def test_submenus_can_be_switched_off(self):
         config = Config()
         config.menu.homing = config.menu.heating = config.menu.move = config.menu.filament = False
-        config.menu.fans = False
+        config.menu.fans = config.menu.z_offset = False
         ui, _ = make_ui(make_printer(config), config)
         self.assertEqual([a.label for a in ui.actions()], ["Zurück", "Anzeige auffrischen"])
 
@@ -732,6 +733,79 @@ class FanTest(unittest.TestCase):
         ui.render(1.1, WALL)
         ui.click(1.2)
         self.assertEqual(calls, [])
+
+
+PROBE = {"configfile": {"settings": {"stepper_z": {"endstop_pin": "probe:z_virtual_endstop"}}}}
+
+
+class ZOffsetTest(unittest.TestCase):
+    select = MenuTest.select
+    select_here = HomingHeatingTest.select_here
+
+    def open_menu(self, printer):
+        ui, calls = make_ui(printer)
+        self.select(ui, "Z-Offset")
+        return ui, calls
+
+    def test_submenu(self):
+        ui, _ = self.open_menu(make_printer())
+        self.assertEqual([line.strip() for line in ui.render(1.0, WALL)],
+                         [">Zurück", "Z-Offset: +0.000", "Schritt: 0.01 mm", "Zurücksetzen"])
+        self.assertEqual([a.label for a in ui.actions("zoffset")][-1], "Speichern")
+
+    def test_babystep_while_printing(self):
+        printer = printing_printer()
+        printer.update_objects({"toolhead": {"homed_axes": "xyz"},
+                                "gcode_move": {"homing_origin": [0, 0, 0.05, 0]}})
+        ui, calls = self.open_menu(printer)
+        self.select_here(ui, "Z-Offset")
+        self.assertEqual(ui.render(1.0, WALL), [
+            "Z-Offset            ", "Ist        +0.050 mm", "Ziel       +0.050 mm", "     Klick = OK     "])
+        ui.rotate(-3, 1.0)
+        self.assertEqual(ui.render(1.0, WALL)[2], "Ziel       +0.020 mm")
+        self.assertEqual(calls, [])
+        ui.click(1.0)
+        self.assertEqual(calls[0].payload, "SET_GCODE_OFFSET Z_ADJUST=-0.03 MOVE=1")
+        self.assertNotIn("Speichern", [a.label for a in ui.actions("zoffset")])  # nie waehrend des Drucks
+
+    def test_step_and_limits(self):
+        ui, calls = self.open_menu(make_printer())
+        self.select_here(ui, "Schritt")
+        ui.rotate(3, 1.0)  # 0.01 -> 0.1
+        ui.click(1.0)
+        self.assertIn("Schritt: 0.1 mm", [line[1:].rstrip() for line in ui.render(1.0, WALL)])
+        self.select_here(ui, "Z-Offset")
+        ui.rotate(99, 1.0)
+        self.assertEqual(ui.render(1.0, WALL)[2], "Ziel       +2.000 mm")
+        ui.click(1.0)
+        # ohne Homing faehrt der Kopf nicht mit
+        self.assertEqual(calls[0].payload, "SET_GCODE_OFFSET Z_ADJUST=2")
+        self.select_here(ui, "Z-Offset")
+        ui.rotate(1, 1.0)
+        ui.long_press(1.0)  # verwerfen
+        self.assertEqual(len(calls), 1)
+
+    def test_reset(self):
+        printer = make_printer(objects={"toolhead": {"homed_axes": "xyz"}})
+        ui, calls = self.open_menu(printer)
+        self.select_here(ui, "Zurücksetzen")
+        self.assertEqual(calls[0].payload, "SET_GCODE_OFFSET Z=0 MOVE=1")
+
+    def test_save_asks_first_and_uses_probe_or_endstop(self):
+        for objects, command in ((PROBE, "Z_OFFSET_APPLY_PROBE"), ({}, "Z_OFFSET_APPLY_ENDSTOP")):
+            ui, calls = self.open_menu(make_printer(objects=objects))
+            self.select_here(ui, "Speichern")
+            self.assertIn(">Nein", ui.render(1.0, WALL)[3])
+            ui.rotate(1, 1.0)
+            ui.click(1.0)
+            self.assertEqual(calls[0].payload, command + "\nSAVE_CONFIG")
+
+    def test_small_display(self):
+        ui, _ = make_ui(make_printer(), cols=16, rows=2)
+        self.select(ui, "Z-Offset")
+        self.select_here(ui, "Z-Offset")
+        ui.rotate(2, 1.0)
+        self.assertEqual(ui.render(1.0, WALL), ["Z-Offset  +0.000", "Ziel   +0.020 mm"])
 
 
 class BacklightTest(unittest.TestCase):

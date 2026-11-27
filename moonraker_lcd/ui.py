@@ -23,6 +23,10 @@ HOMING = (
 #: Schrittweiten beim Einstellen einer Achsposition (mm)
 MOVE_STEPS = (0.1, 1.0, 10.0)
 #: waehlbares Tempo beim Bewegen (mm/min); der Wert aus der Konfiguration kommt dazu
+#: Schrittweiten beim Z-Offset (mm)
+Z_STEPS = (0.005, 0.01, 0.025, 0.05, 0.1)
+#: groesster Z-Offset, der sich einstellen laesst (mm)
+Z_LIMIT = 2.0
 #: Prozent je Rastung beim Einstellen eines Luefters
 FAN_STEP = 10
 MOVE_SPEEDS = (50, 100, 200, 300, 500, 1000, 1500, 2000, 3000, 4000, 5000, 6000, 8000, 10000)
@@ -32,7 +36,7 @@ MOVE_SPEEDS = (50, 100, 200, 300, 500, 1000, 1500, 2000, 3000, 4000, 5000, 6000,
 class Action:
     """Was der Dienst ausfuehren soll."""
 
-    kind: str  # rpc | gcode | power | refresh | back | submenu | edit | jog | step | speed | filament | ftemp | fan
+    kind: str  # rpc | gcode | power | refresh | back | submenu | edit | jog | step | speed | filament | ftemp | fan | zoffset | zstep
     label: str
     method: str = ""
     payload: str = ""
@@ -87,6 +91,9 @@ class UI:
             (p.extruder for p in menu.preheats if p.extruder), 200)
         self._ftemp_edit = None  # Temperatur beim Einstellen fuer Laden/Entladen
         self._fan_edit = None  # [Action, Prozent] beim Einstellen eines Luefters
+        self._z_step = 1         # Index in Z_STEPS, 0.01 mm
+        self._z_step_edit = None  # Index beim Einstellen der Schrittweite
+        self._z_edit = None      # [Ist, Ziel] beim Einstellen des Z-Offsets
         self._question = None  # Action, die auf Ja/Nein wartet
         self._answer = False
         self._notice = None    # (Text, Ablaufzeit)
@@ -116,6 +123,11 @@ class UI:
             self._step_edit = min(max(self._step_edit + steps, 0), len(MOVE_STEPS) - 1)
         elif self._fan_edit is not None:
             self._fan_edit[1] = min(max(self._fan_edit[1] + steps * FAN_STEP, 0), 100)
+        elif self._z_edit is not None:
+            target = round(self._z_edit[1] + steps * Z_STEPS[self._z_step], 3)
+            self._z_edit[1] = min(max(target, -Z_LIMIT), Z_LIMIT)
+        elif self._z_step_edit is not None:
+            self._z_step_edit = min(max(self._z_step_edit + steps, 0), len(Z_STEPS) - 1)
         elif self._ftemp_edit is not None:
             low, high = self._ftemp_limits()
             self._ftemp_edit = min(max(self._ftemp_edit + steps * self._config.menu.temperature_step, low), high)
@@ -165,6 +177,12 @@ class UI:
         if self._fan_edit is not None:
             self._finish_fan(now)
             return
+        if self._z_edit is not None:
+            self._finish_z(now)
+            return
+        if self._z_step_edit is not None:
+            self._z_step, self._z_step_edit = self._z_step_edit, None
+            return
         if self._edit is not None:
             self._finish_edit(now)
             return
@@ -184,6 +202,11 @@ class UI:
             self._step_edit = self._move_step
         elif action.kind == "speed":
             self._speed_edit = [action.payload, self._speeds[action.payload]]
+        elif action.kind == "zoffset":
+            offset = round(self._printer.z_offset, 3)
+            self._z_edit = [offset, offset]
+        elif action.kind == "zstep":
+            self._z_step_edit = self._z_step
         elif action.kind == "fan":
             self._fan_edit = [action, self._fan_percent(action.payload)]
         elif action.kind == "ftemp":
@@ -209,6 +232,7 @@ class UI:
             self._edit = None
         elif any(edit is not None for edit in self._value_edits()):
             self._jog = self._step_edit = self._speed_edit = self._ftemp_edit = self._fan_edit = None
+            self._z_edit = self._z_step_edit = None
         elif self._menu is not None:
             self._leave_menu()
         else:
@@ -234,6 +258,17 @@ class UI:
                 Action("speed", "%s %s" % (self._t("speed"), axis.upper()), payload=axis, when="idle")
                 for axis in "xyz"
             ] + [Action("gcode", self._t("motors_off"), payload="M84", when="idle")]
+            return [action for action in candidates if self._allowed(action)]
+        if menu_id == "zoffset":
+            probe = self._printer.z_uses_probe
+            candidates = [
+                Action(BACK, self._t("back")),
+                Action("zoffset", self._t("z_offset"), when="ready"),
+                Action("zstep", self._t("step"), when="ready"),
+                Action("gcode", self._t("reset"), payload=self._z_script("Z=0"), when="ready"),
+                Action("gcode", self._t("save"), confirm=True, when="idle", payload="%s\nSAVE_CONFIG" % (
+                    "Z_OFFSET_APPLY_PROBE" if probe else "Z_OFFSET_APPLY_ENDSTOP")),
+            ]
             return [action for action in candidates if self._allowed(action)]
         if menu_id == "fans":
             candidates = [Action(BACK, self._t("back"))] + [
@@ -269,6 +304,8 @@ class UI:
             candidates.append(Action("submenu", t("move"), payload="move", when="idle"))
         if menu.heating and (self._printer.extruder or self._printer.bed):
             candidates.append(Action("submenu", t("heat"), payload="heat", when="ready"))
+        if menu.z_offset:
+            candidates.append(Action("submenu", t("z_offset"), payload="zoffset", when="ready"))
         if menu.fans and self._printer.fans:
             candidates.append(Action("submenu", t("fan"), payload="fans", when="ready"))
         if menu.filament and self._printer.extruder:
@@ -330,6 +367,7 @@ class UI:
     def _close_menu(self) -> None:
         self._menu, self._menu_id, self._stack = None, MAIN, []
         self._edit = self._jog = self._step_edit = self._speed_edit = self._ftemp_edit = self._fan_edit = None
+        self._z_edit = self._z_step_edit = None
 
     def _enter_menu(self, menu_id: str) -> None:
         self._stack.append((self._menu_id, self._cursor))
@@ -356,6 +394,8 @@ class UI:
             self._jog = None
         if self._fan_edit is not None and not self._allowed(self._fan_edit[0]):
             self._fan_edit = None
+        if self._z_edit is not None and not self._printer.phase.ready:
+            self._z_edit = None
         if self._menu is None:
             return
         selected = self._menu[self._cursor]
@@ -412,7 +452,26 @@ class UI:
         self._on_action(Action("gcode", action.label, payload=script, when="idle"))
 
     def _value_edits(self) -> tuple:
-        return self._jog, self._step_edit, self._speed_edit, self._ftemp_edit, self._fan_edit
+        return (self._jog, self._step_edit, self._speed_edit, self._ftemp_edit, self._fan_edit,
+                self._z_edit, self._z_step_edit)
+
+    def _z_script(self, change: str) -> str:
+        """SET_GCODE_OFFSET; nach dem Homing faehrt der Kopf sofort mit (MOVE=1)."""
+        move = " MOVE=1" if self._printer.homed("z") else ""
+        return "SET_GCODE_OFFSET %s%s" % (change, move)
+
+    def _finish_z(self, now: float) -> None:
+        """Z-Offset um die Differenz verstellen; das Menue bleibt offen."""
+        current, target = self._z_edit
+        self._z_edit = None
+        delta = round(target - current, 3)
+        if not delta:
+            return
+        if not self._printer.phase.ready:
+            self.notice(self._t("not_now"), now)
+            return
+        payload = self._z_script("Z_ADJUST=%s" % _number(delta))
+        self._on_action(Action("gcode", self._t("z_offset"), payload=payload, when="ready"))
 
     def _fan_percent(self, name: str) -> int:
         for obj, _, speed in self._printer.fans:
@@ -550,6 +609,11 @@ class UI:
         if self._fan_edit is not None:
             action, percent = self._fan_edit
             return self._render_value(ctx, screen.spread(action.label, "%d%%" % percent, self.cols))
+        if self._z_edit is not None:
+            return self._render_z(ctx)
+        if self._z_step_edit is not None:
+            value = screen.spread(self._t("step"), "%s mm" % _number(Z_STEPS[self._z_step_edit]), self.cols)
+            return self._render_value(ctx, value)
         if self._menu is not None:
             return self._render_menu(ctx)
         return page_list[self._page]()
@@ -611,6 +675,18 @@ class UI:
         value = screen.spread("%s %s" % (self._t("speed"), axis.upper()), self._speed_text(speed), self.cols)
         return self._render_value(ctx, value)
 
+    def _render_z(self, ctx) -> list:
+        current, target = self._z_edit
+        goal = screen.spread(self._t("target"), _signed(target) + " mm", self.cols)
+        if self.rows < 4:
+            return ctx.finish([screen.spread(self._t("z_offset"), _signed(current), self.cols), goal])
+        return ctx.finish([
+            screen.fit(self._t("z_offset"), self.cols),
+            screen.spread(self._t("current"), _signed(current) + " mm", self.cols),
+            goal,
+            screen.center(self._t("edit_hint"), self.cols),
+        ])
+
     def _render_value(self, ctx, value: str) -> list:
         """Einzelner Wert beim Einstellen, mit Hinweis."""
         if self.rows < 4:
@@ -634,6 +710,10 @@ class UI:
             return "%s: %d°" % (action.label, self._ftemp)
         if action.kind == "fan":
             return "%s: %d%%" % (action.label, self._fan_percent(action.payload))
+        if action.kind == "zoffset":
+            return "%s: %s" % (action.label, _signed(self._printer.z_offset))
+        if action.kind == "zstep":
+            return "%s: %s mm" % (action.label, _number(Z_STEPS[self._z_step]))
         if action.kind == "submenu":
             return action.label + " >"
         return action.label
@@ -671,3 +751,8 @@ def _extrude(length: float, speed: int, chunk: float) -> list:
         lines.append("G1 E%s F%d" % (_number(sign * part), speed))
         rest = round(rest - part, 3)
     return lines
+
+
+def _signed(value: float) -> str:
+    """Offset mit Vorzeichen, ohne "-0.000"."""
+    return "%+.3f" % (round(value, 3) + 0.0)

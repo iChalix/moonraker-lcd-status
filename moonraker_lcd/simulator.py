@@ -28,7 +28,8 @@ def base_objects() -> dict:
         "idle_timeout": {"state": "Idle"},
         "toolhead": {"extruder": "extruder", "homed_axes": "", "position": [0.0, 0.0, 0.0, 0.0],
                      "axis_minimum": [0.0, 0.0, -2.0, 0.0], "axis_maximum": [300.0, 300.0, 300.0, 0.0]},
-        "gcode_move": {"gcode_position": [0, 0, 0, 0], "speed_factor": 1.0, "extrude_factor": 1.0},
+        "gcode_move": {"gcode_position": [0, 0, 0, 0], "speed_factor": 1.0, "extrude_factor": 1.0,
+                       "homing_origin": [0.0, 0.0, 0.0, 0.0]},
         "fan": {"speed": 0.0},
         "fan_generic abluft": {"speed": 0.0},
         "extruder": {"temperature": 24.1, "target": 0.0},
@@ -121,6 +122,13 @@ class SimulatedClient:
                 self.printer.update_objects({"fan": {"speed": value / 255.0}})
             elif words[:1] == ["M107"]:
                 self.printer.update_objects({"fan": {"speed": 0.0}})
+            elif words[:1] == ["SET_GCODE_OFFSET"]:
+                params = dict(word.split("=", 1) for word in words[1:])
+                origin = list(self.printer.get("gcode_move", "homing_origin", [0.0] * 4))
+                if "Z" in params:
+                    origin[2] = float(params["Z"])
+                origin[2] += float(params.get("Z_ADJUST", 0.0))
+                self.printer.update_objects({"gcode_move": {"homing_origin": origin}})
             elif words[:1] == ["SET_FAN_SPEED"]:
                 params = dict(word.split("=", 1) for word in words[1:])
                 self.printer.update_objects({"fan_generic " + params["FAN"]: {"speed": float(params["SPEED"])}})

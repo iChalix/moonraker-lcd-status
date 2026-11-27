@@ -102,6 +102,13 @@ Im Menü stehen außerdem:
   3000/3000/200) stellt man genauso ein. Nur ohne Druck und nur für Achsen nach
   dem Homing; die Grenzen kommen aus Klipper, Z nie unter 0. „Motoren aus“ sendet
   `M84`.
+* **Z-Offset ›** – Babystepping, auch während des Drucks: „Z-Offset“ wählen,
+  Klick, drehen, Klick verstellt um die Differenz (`SET_GCODE_OFFSET Z_ADJUST`,
+  nach dem Homing mit `MOVE=1`). „Schritt“ 0,005 bis 0,1 mm, Grenze ±2 mm.
+  „Zurücksetzen“ setzt den Offset auf 0. „Speichern“ (nur ohne Druck, mit
+  Rückfrage) schreibt ihn mit `Z_OFFSET_APPLY_PROBE` – oder
+  `Z_OFFSET_APPLY_ENDSTOP`, wenn der Z-Endstop keine Sonde ist – und
+  `SAVE_CONFIG` fest; Klipper startet dabei neu.
 * **Lüfter ›** – Bauteillüfter und jeder `[fan_generic]` in 10-%-Schritten
   (Klick, drehen, Klick), auch während des Drucks. Automatische Lüfter (Hotend,
   Elektronik) regelt Klipper selbst, sie erscheinen nicht.

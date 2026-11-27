@@ -13,6 +13,13 @@ Release einen datierten Abschnitt.
 
 ## [Unreleased]
 
+### Neu
+
+* Untermenü **Z-Offset**: Babystepping auch während des Drucks (Schritt 0,005
+  bis 0,1 mm), Zurücksetzen und Speichern mit Rückfrage
+  (`Z_OFFSET_APPLY_PROBE` bzw. `_ENDSTOP` + `SAVE_CONFIG`, nur ohne Druck).
+  Abschalten mit `[menu] z_offset = no`.
+
 ## [1.4.0] - 2026-11-27
 
 ### Neu

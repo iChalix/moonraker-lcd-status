@@ -18,7 +18,7 @@ BASE_OBJECTS = {
     "pause_resume": ["is_paused"],
     "idle_timeout": ["state"],
     "toolhead": ["extruder", "homed_axes", "position", "axis_minimum", "axis_maximum"],
-    "gcode_move": ["gcode_position", "speed_factor", "extrude_factor"],
+    "gcode_move": ["gcode_position", "speed_factor", "extrude_factor", "homing_origin"],
     "fan": ["speed"],
     # nur fuer max_temp der Heizer (Grenze beim Einstellen im Menue)
     "configfile": ["settings"],
@@ -412,6 +412,22 @@ class Printer:
 
     def axis_limits(self, axis: str) -> tuple:
         return self._axis_value("axis_minimum", axis, 0.0), self._axis_value("axis_maximum", axis, 0.0)
+
+    @property
+    def z_offset(self) -> float:
+        """Aktueller Z-Offset (SET_GCODE_OFFSET / Babystepping)."""
+        origin = self.get("gcode_move", "homing_origin", None)
+        try:
+            return number(origin[2])
+        except (TypeError, IndexError):
+            return 0.0
+
+    @property
+    def z_uses_probe(self) -> bool:
+        """Z-Endstop ist die Sonde: Offset per Z_OFFSET_APPLY_PROBE speichern."""
+        settings = self.get("configfile", "settings", {}) or {}
+        pin = str((settings.get("stepper_z") or {}).get("endstop_pin", ""))
+        return pin.replace(" ", "").lower().startswith("probe:")
 
     def setting(self, section: str, key: str, default: float) -> float:
         """Zahl aus Klippers Konfiguration (``configfile.settings``)."""
