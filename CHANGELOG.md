@@ -13,6 +13,12 @@ Release einen datierten Abschnitt.
 
 ## [Unreleased]
 
+### Neu
+
+* Homing-Menü: „Z-Tilt ausrichten“ bzw. „Gantry ausrichten“, wenn Klipper
+  `[z_tilt]` bzw. `[quad_gantry_level]` hat – bei Bedarf erst `G28`, danach
+  `G28 Z`; „(ok)“ zeigt, dass schon ausgerichtet ist.
+
 ## [1.6.0] - 2026-11-27
 
 ### Neu

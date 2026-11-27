@@ -249,7 +249,7 @@ class UI:
         if menu_id == "home":
             candidates = [Action(BACK, self._t("back"))] + [
                 Action("gcode", self._t(key), payload=gcode, when="idle") for key, gcode in HOMING
-            ]
+            ] + self._leveling_actions()
             return [action for action in candidates if self._allowed(action)]
         if menu_id == "move":
             candidates = [Action(BACK, self._t("back"))] + [
@@ -454,6 +454,18 @@ class UI:
         script = "SAVE_GCODE_STATE NAME=lcd_move\nG91\nG1 %s%s F%d\nRESTORE_GCODE_STATE NAME=lcd_move" % (
             axis.upper(), _number(delta), speed)
         self._on_action(Action("gcode", action.label, payload=script, when="idle"))
+
+    def _leveling_actions(self) -> list:
+        """Z_TILT_ADJUST / QUAD_GANTRY_LEVEL, wenn Klipper sie kennt; danach Z neu referenzieren."""
+        printer, actions = self._printer, []
+        home = "" if all(printer.homed(axis) for axis in "xyz") else "G28\n"
+        for obj, key, command in (("z_tilt", "z_tilt", "Z_TILT_ADJUST"), ("quad_gantry_level", "qgl", "QUAD_GANTRY_LEVEL")):
+            if obj in printer.objects:
+                label = self._t(key)
+                if printer.get(obj, "applied", False):
+                    label += " (%s)" % self._t("aligned")
+                actions.append(Action("gcode", label, payload="%s%s\nG28 Z" % (home, command), when="idle"))
+        return actions
 
     def _mesh_actions(self) -> list:
         """Kalibrieren, gespeicherte Profile laden, Mesh loeschen, speichern."""

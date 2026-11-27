@@ -291,7 +291,8 @@ class HomingHeatingTest(unittest.TestCase):
         ui, calls = make_ui(make_printer())
         self.select(ui, "Homing")
         self.assertEqual([a.label for a in ui.actions("home")],
-                         ["Zurück", "Alle Achsen", "X- und Y-Achse", "X-Achse", "Y-Achse", "Z-Achse"])
+                         ["Zurück", "Alle Achsen", "X- und Y-Achse", "X-Achse", "Y-Achse", "Z-Achse",
+                          "Z-Tilt ausrichten"])
         self.select_here(ui, "Z-Achse")
         self.assertEqual((calls[0].kind, calls[0].payload), ("gcode", "G28 Z"))
         self.assertNotIn(">", "".join(ui.render(1.0, WALL)))  # Menue geschlossen
@@ -309,6 +310,27 @@ class HomingHeatingTest(unittest.TestCase):
                 return
             ui.rotate(1, now)
         self.fail("%r nicht im Menue: %r" % (label, lines))
+
+    def test_z_tilt(self):
+        ui, calls = make_ui(make_printer())
+        self.select(ui, "Homing")
+        self.select_here(ui, "Z-Tilt")
+        self.assertEqual(calls[0].payload, "G28\nZ_TILT_ADJUST\nG28 Z")
+        printer = make_printer(objects={"toolhead": {"homed_axes": "xyz"}, "z_tilt": {"applied": True}})
+        ui, calls = make_ui(printer)
+        self.assertIn("Z-Tilt ausrichten (ok)", [a.label for a in ui.actions("home")])
+        self.select(ui, "Homing")
+        self.select_here(ui, "Z-Tilt")
+        self.assertEqual(calls[0].payload, "Z_TILT_ADJUST\nG28 Z")
+
+    def test_quad_gantry_level_and_neither(self):
+        printer = make_printer(objects={"quad_gantry_level": {"applied": False}})
+        del printer.objects["z_tilt"]
+        ui, _ = make_ui(printer)
+        self.assertEqual([a.payload for a in ui.actions("home")][-1], "G28\nQUAD_GANTRY_LEVEL\nG28 Z")
+        self.assertEqual([a.label for a in ui.actions("home")][-1], "Gantry ausrichten")
+        del printer.objects["quad_gantry_level"]
+        self.assertEqual([a.label for a in ui.actions("home")][-1], "Z-Achse")
 
     def test_no_homing_while_printing(self):
         ui, _ = make_ui(printing_printer())

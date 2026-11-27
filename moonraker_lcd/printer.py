@@ -21,6 +21,8 @@ BASE_OBJECTS = {
     "gcode_move": ["gcode_position", "speed_factor", "extrude_factor", "homing_origin"],
     "fan": ["speed"],
     "bed_mesh": ["profile_name", "profiles"],
+    "z_tilt": ["applied"],
+    "quad_gantry_level": ["applied"],
     # nur fuer max_temp der Heizer (Grenze beim Einstellen im Menue)
     "configfile": ["settings"],
 }

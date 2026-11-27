@@ -33,6 +33,7 @@ def base_objects() -> dict:
         "fan": {"speed": 0.0},
         "fan_generic abluft": {"speed": 0.0},
         "bed_mesh": {"profile_name": "", "profiles": {"default": {}, "pla_60": {}}},
+        "z_tilt": {"applied": False},
         "extruder": {"temperature": 24.1, "target": 0.0},
         "heater_bed": {"temperature": 22.4, "target": 0.0},
         "heater_generic chamber": {"temperature": 25.0, "target": 0.0},
@@ -123,6 +124,8 @@ class SimulatedClient:
                 self.printer.update_objects({"fan": {"speed": value / 255.0}})
             elif words[:1] == ["M107"]:
                 self.printer.update_objects({"fan": {"speed": 0.0}})
+            elif words[:1] == ["Z_TILT_ADJUST"]:
+                self.printer.update_objects({"z_tilt": {"applied": True}})
             elif words[:1] == ["BED_MESH_CALIBRATE"]:
                 profiles = dict(self.printer.get("bed_mesh", "profiles", {}) or {})
                 profiles["default"] = {}

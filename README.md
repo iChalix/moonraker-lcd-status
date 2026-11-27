@@ -96,6 +96,10 @@ richtige Arduino gemeldet hat. Andere Programme prüfen das nicht.
 Im Menü stehen außerdem:
 
 * **Homing ›** – alle Achsen, X und Y zusammen, X, Y oder Z (`G28`), nur ohne Druck.
+  Hat Klipper `[z_tilt]` bzw. `[quad_gantry_level]`, steht dort auch „Z-Tilt
+  ausrichten“ bzw. „Gantry ausrichten“: bei Bedarf erst `G28`, dann
+  `Z_TILT_ADJUST`/`QUAD_GANTRY_LEVEL` und `G28 Z`; „(ok)“ zeigt, dass schon
+  ausgerichtet ist.
 * **Achsen bewegen ›** – wie bei den Temperaturen: Achse auswählen, Klick,
   Zielposition drehen, Klick fährt hin und führt zurück zur Auswahl. „Schritt“
   (0,1 / 1 / 10 mm) und „Tempo X/Y/Z“ (mm/min, Standard aus `move_speed_x/_y/_z`:
