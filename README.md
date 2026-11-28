@@ -34,6 +34,60 @@ Das LCD nicht direkt an die GPIO-Pins des Raspberry Pi hängen: Der Adapter zieh
 SDA/SCL auf 5 V, die Pins vertragen 3,3 V. Den Kontrast stellt das Poti auf dem
 Adapter ein – bleibt das Display leer oder zeigt nur Kästchen, zuerst dort drehen.
 
+### Gehäuse
+
+In [`cad/`](cad) liegt ein Gehäuse zum Drucken für ein 20×4-LCD mit I2C-Adapter,
+einen Drehgeber HW-040/KY-040 und einen Arduino Nano. Es wird mit einem Halter an
+ein **3030-Nutprofil** geschraubt, das Display ist 20° nach oben geneigt. Außenmaß
+etwa 161 × 69 × 37 mm.
+
+| Datei | Anzahl | Hinweis |
+|---|---|---|
+| [`gehaeuse.stl`](cad/gehaeuse.stl) | 1 | Front liegt auf dem Druckbett |
+| [`deckel.stl`](cad/deckel.stl) | 1 | mit Schienen für den Nano |
+| [`halter.stl`](cad/halter.stl) | 1 | für das 3030-Profil |
+| [`klemmbuegel.stl`](cad/klemmbuegel.stl) | 1 | hält den Drehgeber |
+| [`nutenstein.stl`](cad/nutenstein.stl) | 2 | Dreh-Nutenstein statt Hammermutter |
+
+Die STLs sind schon fürs Druckbett ausgerichtet und brauchen keine Stützen. PLA
+reicht, solange der Drucker offen ist; in einem warmen Bauraum besser PETG.
+Nutensteine mit 100 % Infill, den Halter mit 4 Wänden drucken.
+
+Material: 8 M3-Gewindeeinsätze (Loch 4,0 mm), 4× M3×6 (Display), 4× M3×8
+(Klemmbügel, Halter), 4× M3×8 seitlich in den Deckel, 2× M5×12 in die Nutensteine.
+
+Zusammenbau:
+
+1. Gewindeeinsätze in die 4 Display-Dome, die 2 Dome neben dem Drehgeber und die 2
+   Löcher im Halter einschmelzen.
+2. Halter mit den Nutensteinen an das Profil schrauben. Die Seite der Nutensteine
+   mit der Rille zeigt zum Schraubenkopf; beim Festziehen drehen sie sich quer.
+3. Deckel von innen mit 2× M3×8 an den Halter schrauben.
+4. Den Nano von vorne in die Schienen des Deckels schieben, USB-Buchse unten.
+5. Display auf die Dome schrauben, Drehgeber in den Rahmen an der Front setzen und
+   mit dem Klemmbügel halten. Verkabeln.
+6. Gehäuse über den Deckel stecken und seitlich verschrauben, USB-Kabel von unten
+   einstecken.
+
+Die Teile entstehen aus dem Skript [`cad/lcd_gehaeuse.py`](cad/lcd_gehaeuse.py).
+Alle Maße stehen oben im Skript; für andere Bauteile die Werte anpassen und neu
+erzeugen, ohne Oberfläche mit
+
+```
+freecadcmd cad/lcd_gehaeuse.py
+```
+
+(macOS: `/Applications/FreeCAD.app/Contents/Resources/bin/freecadcmd`) oder in der
+Python-Konsole von FreeCAD mit
+
+```
+p = "/pfad/zu/cad/lcd_gehaeuse.py"
+exec(open(p).read(), {"__file__": p, "__name__": "__main__"})
+```
+
+Dabei werden STL, STEP und die FreeCAD-Datei im Ordner `cad/` neu geschrieben. `lcd_gehaeuse_mit_bauteilen.step` zeigt den Zusammenbau samt
+Platzhaltern für Display, Drehgeber, Nano und Profil.
+
 ## Sketch aufspielen
 
 [`arduino/MoonrakerLcdStatus`](arduino/MoonrakerLcdStatus/MoonrakerLcdStatus.ino)
