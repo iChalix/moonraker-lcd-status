@@ -13,6 +13,16 @@ Release einen datierten Abschnitt.
 
 ## [Unreleased]
 
+### Geändert
+
+* Lizenz von MIT auf Apache License 2.0 umgestellt (`LICENSE`, `NOTICE`).
+
+### Neu
+
+* Druckbares Gehäuse in `cad/` für 20×4-LCD, Drehgeber HW-040 und Arduino Nano,
+  mit Halter und Dreh-Nutenstein für 3030- und 2020-Profil (FreeCAD-Skript,
+  STEP, STL).
+
 ## [1.7.0] - 2026-11-27
 
 ### Neu

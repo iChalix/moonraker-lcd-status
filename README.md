@@ -282,4 +282,5 @@ Release schneiden: `python3 scripts/release.py patch|minor|major`
 
 ## Lizenz
 
-MIT, siehe [LICENSE](LICENSE).
+Apache License 2.0, siehe [LICENSE](LICENSE) und [NOTICE](NOTICE). Das gilt für
+den Code, den Arduino-Sketch und die Gehäusedateien in `cad/`.
