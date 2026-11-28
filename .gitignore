@@ -6,3 +6,6 @@ venv/
 moonraker-lcd-env/
 *.log
 .DS_Store
+
+# FreeCAD-Sicherungskopien
+*.FCBak
