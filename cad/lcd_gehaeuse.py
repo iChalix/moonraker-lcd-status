@@ -89,11 +89,11 @@ BOLT_SPACING = 30.0   # Abstand der beiden Schrauben ins Profil
 # MESSEN am eigenen Profil: SLOT_OPEN (Schlitzbreite), SLOT_LIP (Dicke der Nutstege),
 # SLOT_INNER (Breite der Nut hinter den Stegen).
 PROFILES = {
-    "3030": dict(PROFILE=30.0, SLOT_OPEN=8.2, SLOT_LIP=2.2, SLOT_INNER=16.5,
+    "3030": dict(PROFILE=30.0, SLOT_OPEN=8.2, SLOT_LIP=2.2, SLOT_INNER=16.5, SLOT_DEPTH=9.0,
                  SLOT_KEY=7.6, KEY_H=2.0,            # Fuehrungssteg in der Nut
                  TNUT_W=7.4, TNUT_T=4.0,             # Nutenstein: schmale Seite, Dicke
                  BOLT="M5", BOLT_CLEAR=5.5, BOLT_HEAD=10.0, NUT_CORE=4.2),
-    "2020": dict(PROFILE=20.0, SLOT_OPEN=6.2, SLOT_LIP=1.8, SLOT_INNER=11.0,
+    "2020": dict(PROFILE=20.0, SLOT_OPEN=6.2, SLOT_LIP=1.8, SLOT_INNER=11.0, SLOT_DEPTH=6.1,
                  SLOT_KEY=5.6, KEY_H=1.5,
                  TNUT_W=5.6, TNUT_T=3.0,             # M5 waere zu dick fuer 5,6 mm -> M4
                  BOLT="M4", BOLT_CLEAR=4.5, BOLT_HEAD=8.5, NUT_CORE=3.3),
@@ -353,12 +353,27 @@ def make_tnut():
 
 
 def make_profile():
+    """Nutprofil (Platzhalter) mit T-Nut auf allen vier Seiten."""
     p = box(-30, IN_W + 30, 0, PROFILE, 0, PROFILE)
-    c, w, d = PROFILE / 2, SLOT_OPEN / 2, PROFILE * 0.3
-    for slot in (box(-31, IN_W + 31, -1, d, c - w, c + w), box(-31, IN_W + 31, PROFILE - d, PROFILE + 1, c - w, c + w),
-                 box(-31, IN_W + 31, c - w, c + w, -1, d), box(-31, IN_W + 31, c - w, c + w, PROFILE - d, PROFILE + 1)):
-        p = p.cut(slot)
+    c, x0, x1 = PROFILE / 2, -31, IN_W + 31
+    for half_w, d0, d1 in ((SLOT_OPEN / 2, -1, SLOT_LIP + 0.01), (SLOT_INNER / 2, SLOT_LIP, SLOT_DEPTH)):
+        p = p.cut(box(x0, x1, d0, d1, c - half_w, c + half_w))                       # vorne
+        p = p.cut(box(x0, x1, PROFILE - d1, PROFILE - d0, c - half_w, c + half_w))   # hinten
+        p = p.cut(box(x0, x1, c - half_w, c + half_w, d0, d1))                       # unten
+        p = p.cut(box(x0, x1, c - half_w, c + half_w, PROFILE - d1, PROFILE - d0))   # oben
     return to_case(p)
+
+
+def placed_tnuts():
+    """Die beiden Nutensteine quer in der Nut, Rille zum Schraubenkopf (Gehaeuse-Koordinaten)."""
+    nuts = []
+    for x in (LCD_CX - BOLT_SPACING / 2, LCD_CX + BOLT_SPACING / 2):
+        # x -> Z (quer zur Nut), z -> -Y (Rille nach vorne), dann hinter die Nutstege
+        m = App.Matrix(0, -1, 0, x,
+                       0, 0, -1, SLOT_LIP + TNUT_T,
+                       1, 0, 0, PROFILE / 2)
+        nuts.append(to_case(make_tnut().transformGeometry(m)))
+    return nuts
 
 
 # ------------------------------------------------------------------ Bauteile (nur zur Kontrolle)
@@ -407,7 +422,7 @@ def nano_parts(dy=0.0):
 
 COLORS = {
     "Gehaeuse": (0.20, 0.22, 0.25), "Deckel": (0.30, 0.32, 0.36), "Halter": (0.85, 0.45, 0.10),
-    "Klemmbuegel": (0.85, 0.45, 0.10),
+    "Klemmbuegel": (0.85, 0.45, 0.10), "Nutenstein": (0.85, 0.45, 0.10),
     "Profil_3030": (0.75, 0.75, 0.78), "Profil_2020": (0.75, 0.75, 0.78), "LCD_Platine": (0.10, 0.50, 0.15), "LCD_Rahmen": (0.05, 0.05, 0.05),
     "I2C_Adapter": (0.10, 0.25, 0.70), "I2C_Stecker": (0.10, 0.10, 0.10), "Drehgeber": (0.60, 0.60, 0.62),
     "Drehgeber_Platine": (0.10, 0.25, 0.70), "Drehgeber_Stecker": (0.10, 0.10, 0.10),
@@ -457,24 +472,69 @@ def build(export=True):
     dummies_view = dict(dummies)
     dummies_view["Profil_" + PROFILE_TYPE] = make_profile()
     pl = case_to_world()
+    nuts = {"Nutenstein_%d" % (i + 1): s for i, s in enumerate(placed_tnuts())}
     objs = {}
-    for n, s in list(parts.items()) + list(dummies_view.items()):
+
+    def add(n, s, group=None, label=None):
         o = doc.addObject("Part::Feature", n)
         o.Shape = s
         o.Placement = pl
-        objs[n] = o
+        if label:
+            o.Label = label
+        if group is not None:
+            group.addObject(o)
         if App.GuiUp:
-            o.ViewObject.ShapeColor = COLORS.get(n, (0.5, 0.5, 0.5))
+            base = n if n in COLORS else n.split("_")[0]     # Halter_2020 -> Halter
+            o.ViewObject.ShapeColor = COLORS.get(base, (0.75, 0.75, 0.78))
+        return o
+
+    for n, s in list(parts.items()) + list(nuts.items()) + list(dummies_view.items()):
+        objs[n] = add(n, s)
+    objs["Halter"].Label = "Halter_" + PROFILE_TYPE
+    # die anderen Profile als ausgeblendete Varianten (gleiches Gehaeuse, anderer Halter)
+    variants = []
+    try:
+        for prof in PROFILES:
+            if prof == PROFILE_TYPE:
+                continue
+            use_profile(prof)
+            grp = doc.addObject("App::DocumentObjectGroup", "Variante_" + prof)
+            vb = make_bracket()
+            vn = placed_tnuts()
+            vp = make_profile()
+            variants.append((prof, vb, vn, vp))
+            add("Halter_" + prof, vb, grp)
+            for i, s in enumerate(vn):
+                add("Nutenstein_%s_%d" % (prof, i + 1), s, grp)
+            add("Profil_" + prof, vp, grp)
+            if App.GuiUp:
+                for o in grp.Group:
+                    o.ViewObject.Visibility = False
+    finally:
+        use_profile(PROFILE_TYPE)
     doc.recompute()
+    # Nutensteine, Halter und Profil der aktiven und der anderen Varianten
+    mount = []
+    profile = dummies_view["Profil_" + PROFILE_TYPE]
+    for prof, br, ns, pr in [(PROFILE_TYPE, parts["Halter"], list(nuts.values()), profile)] + variants:
+        for i, s in enumerate(ns):
+            for other, name in ((pr, "Profil"), (br, "Halter")):
+                v = s.common(other).Volume
+                if v > 0.01:
+                    mount.append((prof, "Nutenstein_%d" % (i + 1), name, round(v, 2)))
+        for name, other in (("Gehaeuse", parts["Gehaeuse"]), ("Deckel", parts["Deckel"])):
+            v = pr.common(other).Volume
+            if v > 0.01:
+                mount.append((prof, "Profil", name, round(v, 2)))
     report = {"aussen": (round(IN_W + 2 * WALL, 1), round(IN_D + FRONT + LID, 1), round(IN_H + 2 * WALL, 1)),
-              "kollisionen": collisions(parts, dummies),
+              "kollisionen": collisions(parts, dummies) + mount,
               "volumen_cm3": {n: round(s.Volume / 1000, 1) for n, s in parts.items()},
               "solid_ok": {n: (len(s.Solids), s.isValid()) for n, s in parts.items()}}
     if export and EXPORT_DIR:
         import Import
         import MeshPart
         doc.saveAs(os.path.join(EXPORT_DIR, "lcd_gehaeuse.FCStd"))
-        Import.export([objs[n] for n in parts], os.path.join(EXPORT_DIR, "lcd_gehaeuse.step"))
+        Import.export([objs[n] for n in list(parts) + list(nuts)], os.path.join(EXPORT_DIR, "lcd_gehaeuse.step"))
         Import.export(list(objs.values()), os.path.join(EXPORT_DIR, "lcd_gehaeuse_mit_bauteilen.step"))
         def write(stem, shape, deflection=0.02):
             shape.exportStep(os.path.join(EXPORT_DIR, stem + ".step"))

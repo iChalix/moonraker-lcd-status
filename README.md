@@ -88,8 +88,11 @@ p = "/pfad/zu/cad/lcd_gehaeuse.py"
 exec(open(p).read(), {"__file__": p, "__name__": "__main__"})
 ```
 
-Dabei werden STL, STEP und die FreeCAD-Datei im Ordner `cad/` neu geschrieben. `lcd_gehaeuse_mit_bauteilen.step` zeigt den Zusammenbau samt
-Platzhaltern für Display, Drehgeber, Nano und Profil.
+Dabei werden STL, STEP und die FreeCAD-Datei im Ordner `cad/` neu geschrieben.
+`lcd_gehaeuse_mit_bauteilen.step` zeigt den Zusammenbau am 3030-Profil samt
+Nutensteinen und Platzhaltern für Display, Drehgeber und Nano. Die FreeCAD-Datei
+enthält zusätzlich die 2020-Variante (Halter, Nutensteine, Profil) als
+ausgeblendete Gruppe `Variante_2020`.
 
 ## Sketch aufspielen
 
