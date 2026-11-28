@@ -38,23 +38,26 @@ Adapter ein – bleibt das Display leer oder zeigt nur Kästchen, zuerst dort dr
 
 In [`cad/`](cad) liegt ein Gehäuse zum Drucken für ein 20×4-LCD mit I2C-Adapter,
 einen Drehgeber HW-040/KY-040 und einen Arduino Nano. Es wird mit einem Halter an
-ein **3030-Nutprofil** geschraubt, das Display ist 20° nach oben geneigt. Außenmaß
-etwa 161 × 69 × 37 mm.
+ein **3030- oder 2020-Nutprofil** geschraubt, das Display ist 20° nach oben
+geneigt. Außenmaß etwa 161 × 69 × 37 mm.
 
 | Datei | Anzahl | Hinweis |
 |---|---|---|
 | [`gehaeuse.stl`](cad/gehaeuse.stl) | 1 | Front liegt auf dem Druckbett |
 | [`deckel.stl`](cad/deckel.stl) | 1 | mit Schienen für den Nano |
-| [`halter.stl`](cad/halter.stl) | 1 | für das 3030-Profil |
 | [`klemmbuegel.stl`](cad/klemmbuegel.stl) | 1 | hält den Drehgeber |
-| [`nutenstein.stl`](cad/nutenstein.stl) | 2 | Dreh-Nutenstein statt Hammermutter |
+| [`halter_3030.stl`](cad/halter_3030.stl) oder [`halter_2020.stl`](cad/halter_2020.stl) | 1 | passend zum Profil |
+| [`nutenstein_3030.stl`](cad/nutenstein_3030.stl) oder [`nutenstein_2020.stl`](cad/nutenstein_2020.stl) | 2 | Dreh-Nutenstein statt Hammermutter |
 
 Die STLs sind schon fürs Druckbett ausgerichtet und brauchen keine Stützen. PLA
 reicht, solange der Drucker offen ist; in einem warmen Bauraum besser PETG.
-Nutensteine mit 100 % Infill, den Halter mit 4 Wänden drucken.
+Nutensteine mit 100 % Infill, den Halter mit 4 Wänden drucken. Der Halter für 2020
+ragt hinten 10 mm unter das Profil, damit er genauso stabil ist wie der für 3030.
 
 Material: 8 M3-Gewindeeinsätze (Loch 4,0 mm), 4× M3×6 (Display), 4× M3×8
-(Klemmbügel, Halter), 4× M3×8 seitlich in den Deckel, 2× M5×12 in die Nutensteine.
+(Klemmbügel, Halter), 4× M3×8 seitlich in den Deckel. Für das Profil 2× M5×12
+(3030) bzw. 2× M4×10 (2020) in die Nutensteine; statt der gedruckten Nutensteine
+gehen auch passende Hammermuttern.
 
 Zusammenbau:
 

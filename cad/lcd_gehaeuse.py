@@ -77,23 +77,35 @@ USB_H = 4.5
 HEADER_GAP = (2.3, 0.8)                # freier Rand unten (USB-Ende) / oben
 NANO_GRIP = (1.5, 0.5)                 # wie weit die Schienen unten / oben die Platine fassen
 
-# Halter fuer 3030-Profil
+# Halter fuer Nutprofil
 TILT = 20.0           # Neigung des Displays nach oben (Grad)
-PROFILE = 30.0
-SLOT_KEY = 7.6        # Fuehrungssteg fuer die 8-mm-Nut
 GAP_TOP = 10.0        # Abstand Profil - Deckel an der Oberkante des Profils
 ARM_UP, ARM_DOWN = 10.0, 45.0          # Anlage am Deckel ueber / unter der Profiloberkante
 BR_W = 60.0
 ANCHOR_Z = 54.0       # Hoehe (Gehaeuse-z) auf Hoehe der Profiloberkante
-M5_SPACING = 30.0
-# Gedruckter Dreh-Nutenstein (statt Hammermutter): durch den Schlitz stecken, 90 Grad drehen.
-# Die M5-Schraube schneidet ihr Gewinde selbst. MESSEN am Profil:
-SLOT_OPEN = 8.2       # Schlitzbreite
-SLOT_LIP = 2.2        # Dicke der Nutstege
-SLOT_INNER = 16.5     # Breite der Nut hinter den Stegen
-TNUT_W = 7.4          # schmale Seite (passt durch den Schlitz)
-TNUT_T = 4.0          # Dicke
-M5_CORE = 4.2         # Kernloch M5
+BOLT_SPACING = 30.0   # Abstand der beiden Schrauben ins Profil
+# Profilvarianten. Gedruckter Dreh-Nutenstein (statt Hammermutter): durch den Schlitz
+# stecken, 90 Grad drehen; die Schraube schneidet ihr Gewinde selbst.
+# MESSEN am eigenen Profil: SLOT_OPEN (Schlitzbreite), SLOT_LIP (Dicke der Nutstege),
+# SLOT_INNER (Breite der Nut hinter den Stegen).
+PROFILES = {
+    "3030": dict(PROFILE=30.0, SLOT_OPEN=8.2, SLOT_LIP=2.2, SLOT_INNER=16.5,
+                 SLOT_KEY=7.6, KEY_H=2.0,            # Fuehrungssteg in der Nut
+                 TNUT_W=7.4, TNUT_T=4.0,             # Nutenstein: schmale Seite, Dicke
+                 BOLT="M5", BOLT_CLEAR=5.5, BOLT_HEAD=10.0, NUT_CORE=4.2),
+    "2020": dict(PROFILE=20.0, SLOT_OPEN=6.2, SLOT_LIP=1.8, SLOT_INNER=11.0,
+                 SLOT_KEY=5.6, KEY_H=1.5,
+                 TNUT_W=5.6, TNUT_T=3.0,             # M5 waere zu dick fuer 5,6 mm -> M4
+                 BOLT="M4", BOLT_CLEAR=4.5, BOLT_HEAD=8.5, NUT_CORE=3.3),
+}
+PROFILE_TYPE = "3030"  # Profil in der Baugruppe; Halter und Nutenstein werden fuer alle exportiert
+
+
+def use_profile(name):
+    globals().update(PROFILES[name])
+
+
+use_profile(PROFILE_TYPE)
 M3_PILOT = 2.5        # Kernloch fuer M3-Schrauben (selbstschneidend in PLA/PETG)
 M3_CLEAR = 3.4
 
@@ -292,13 +304,16 @@ def case_to_world():
 
 def make_bracket_world():
     _, top, bot = bracket_points()
-    pts = [V(BR_X0, 0, 0), V(BR_X0, 0, PROFILE), V(BR_X0, top[0], top[1]),
-           V(BR_X0, bot[0], bot[1]), V(BR_X0, 0, 0)]
+    # Rueckseite mindestens 30 mm hoch, damit der Keil auch bei kleinen Profilen
+    # genug Material fuer die Gewindeeinsaetze hat (ragt dann unter das Profil)
+    low = min(0.0, PROFILE - 30.0)
+    pts = [V(BR_X0, 0, low), V(BR_X0, 0, PROFILE), V(BR_X0, top[0], top[1]),
+           V(BR_X0, bot[0], bot[1]), V(BR_X0, 0, low)]
     br = Part.Face(Part.makePolygon(pts)).extrude(V(BR_W, 0, 0))
-    br = br.fuse(box(BR_X0, BR_X0 + BR_W, 0, 2.0, PROFILE / 2 - SLOT_KEY / 2, PROFILE / 2 + SLOT_KEY / 2))
-    for x in (LCD_CX - M5_SPACING / 2, LCD_CX + M5_SPACING / 2):
-        br = br.cut(cyl(2.75, V(x, 3.0, PROFILE / 2), V(0, -1, 0), 10.0))
-        br = br.cut(cyl(5.0, V(x, -5.0, PROFILE / 2), V(0, -1, 0), 60.0))   # Schraubenkopf + Inbus
+    br = br.fuse(box(BR_X0, BR_X0 + BR_W, 0, KEY_H, PROFILE / 2 - SLOT_KEY / 2, PROFILE / 2 + SLOT_KEY / 2))
+    for x in (LCD_CX - BOLT_SPACING / 2, LCD_CX + BOLT_SPACING / 2):
+        br = br.cut(cyl(BOLT_CLEAR / 2, V(x, 3.0, PROFILE / 2), V(0, -1, 0), 10.0))
+        br = br.cut(cyl(BOLT_HEAD / 2, V(x, -5.0, PROFILE / 2), V(0, -1, 0), 60.0))   # Schraubenkopf + Inbus
     return br.removeSplitter()
 
 
@@ -331,17 +346,17 @@ def make_tnut():
     keep = keep.fuse(box(0, length, 0, TNUT_W, -1, TNUT_T + 1))
     keep = keep.fuse(box(-length, 0, -TNUT_W, 0, -1, TNUT_T + 1))
     nut = head.common(keep)
-    nut = nut.cut(cyl(M5_CORE / 2, V(0, 0, -1), V(0, 0, 1), TNUT_T + 2))
+    nut = nut.cut(cyl(NUT_CORE / 2, V(0, 0, -1), V(0, 0, 1), TNUT_T + 2))
     # Markierung: Rille auf der Seite zum Schraubenkopf
-    nut = nut.cut(box(M5_CORE / 2 + 1.0, length / 2 - 1.5, -0.4, 0.4, TNUT_T - 0.5, TNUT_T + 1))
+    nut = nut.cut(box(NUT_CORE / 2 + 0.8, length / 2 - 1.2, -0.4, 0.4, TNUT_T - 0.5, TNUT_T + 1))
     return nut.removeSplitter()
 
 
 def make_profile():
     p = box(-30, IN_W + 30, 0, PROFILE, 0, PROFILE)
-    c = PROFILE / 2
-    for slot in (box(-31, IN_W + 31, -1, 9, c - 4.1, c + 4.1), box(-31, IN_W + 31, PROFILE - 9, PROFILE + 1, c - 4.1, c + 4.1),
-                 box(-31, IN_W + 31, c - 4.1, c + 4.1, -1, 9), box(-31, IN_W + 31, c - 4.1, c + 4.1, PROFILE - 9, PROFILE + 1)):
+    c, w, d = PROFILE / 2, SLOT_OPEN / 2, PROFILE * 0.3
+    for slot in (box(-31, IN_W + 31, -1, d, c - w, c + w), box(-31, IN_W + 31, PROFILE - d, PROFILE + 1, c - w, c + w),
+                 box(-31, IN_W + 31, c - w, c + w, -1, d), box(-31, IN_W + 31, c - w, c + w, PROFILE - d, PROFILE + 1)):
         p = p.cut(slot)
     return to_case(p)
 
@@ -393,7 +408,7 @@ def nano_parts(dy=0.0):
 COLORS = {
     "Gehaeuse": (0.20, 0.22, 0.25), "Deckel": (0.30, 0.32, 0.36), "Halter": (0.85, 0.45, 0.10),
     "Klemmbuegel": (0.85, 0.45, 0.10),
-    "Profil_3030": (0.75, 0.75, 0.78), "LCD_Platine": (0.10, 0.50, 0.15), "LCD_Rahmen": (0.05, 0.05, 0.05),
+    "Profil_3030": (0.75, 0.75, 0.78), "Profil_2020": (0.75, 0.75, 0.78), "LCD_Platine": (0.10, 0.50, 0.15), "LCD_Rahmen": (0.05, 0.05, 0.05),
     "I2C_Adapter": (0.10, 0.25, 0.70), "I2C_Stecker": (0.10, 0.10, 0.10), "Drehgeber": (0.60, 0.60, 0.62),
     "Drehgeber_Platine": (0.10, 0.25, 0.70), "Drehgeber_Stecker": (0.10, 0.10, 0.10),
     "Nano": (0.10, 0.25, 0.70), "Nano_USB": (0.80, 0.80, 0.82), "Nano_ICSP": (0.10, 0.10, 0.10),
@@ -407,7 +422,7 @@ def collisions(parts, dummies):
     items = list(parts.items()) + list(dummies.items())
     for i, (na, a) in enumerate(items):
         for nb, b in items[i + 1:]:
-            if {na, nb} in ({"Halter", "Profil_3030"},):
+            if "Halter" in (na, nb) and (na + nb).count("Profil_"):
                 continue
             if not a.BoundBox.intersect(b.BoundBox):
                 continue
@@ -439,7 +454,8 @@ def build(export=True):
     parts = {"Gehaeuse": make_shell(), "Deckel": make_lid(), "Halter": make_bracket(),
              "Klemmbuegel": make_clamp()}
     dummies = make_dummies()
-    dummies_view = dict(dummies, Profil_3030=make_profile())
+    dummies_view = dict(dummies)
+    dummies_view["Profil_" + PROFILE_TYPE] = make_profile()
     pl = case_to_world()
     objs = {}
     for n, s in list(parts.items()) + list(dummies_view.items()):
@@ -460,18 +476,25 @@ def build(export=True):
         doc.saveAs(os.path.join(EXPORT_DIR, "lcd_gehaeuse.FCStd"))
         Import.export([objs[n] for n in parts], os.path.join(EXPORT_DIR, "lcd_gehaeuse.step"))
         Import.export(list(objs.values()), os.path.join(EXPORT_DIR, "lcd_gehaeuse_mit_bauteilen.step"))
+        def write(stem, shape, deflection=0.02):
+            shape.exportStep(os.path.join(EXPORT_DIR, stem + ".step"))
+            MeshPart.meshFromShape(Shape=shape, LinearDeflection=deflection, AngularDeflection=0.1,
+                                   Relative=False).write(os.path.join(EXPORT_DIR, stem + ".stl"))
+
         for n, s in parts.items():
-            p = print_oriented(n, s)
-            p.exportStep(os.path.join(EXPORT_DIR, n.lower() + ".step"))
-            mesh = MeshPart.meshFromShape(Shape=p, LinearDeflection=0.02, AngularDeflection=0.1, Relative=False)
-            mesh.write(os.path.join(EXPORT_DIR, n.lower() + ".stl"))
-        # Nutenstein (2x drucken), liegt schon flach
-        nut = make_tnut()
-        bb = nut.BoundBox
-        nut.translate(V(-bb.XMin, -bb.YMin, -bb.ZMin))
-        nut.exportStep(os.path.join(EXPORT_DIR, "nutenstein.step"))
-        MeshPart.meshFromShape(Shape=nut, LinearDeflection=0.01, AngularDeflection=0.1,
-                               Relative=False).write(os.path.join(EXPORT_DIR, "nutenstein.stl"))
+            if n != "Halter":
+                write(n.lower(), print_oriented(n, s))
+        # Halter und Nutenstein (2x drucken) fuer jedes Profil
+        try:
+            for prof in PROFILES:
+                use_profile(prof)
+                write("halter_" + prof, print_oriented("Halter", make_bracket()))
+                nut = make_tnut()
+                bb = nut.BoundBox
+                nut.translate(V(-bb.XMin, -bb.YMin, -bb.ZMin))
+                write("nutenstein_" + prof, nut, 0.01)
+        finally:
+            use_profile(PROFILE_TYPE)
     return doc, report
 
 
